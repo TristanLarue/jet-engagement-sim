@@ -24,6 +24,10 @@ class entity():
         self.pitch_input = 0.0 #Pitch control input (-1.0 to 1.0)
         self.yaw_input = 0.0 #Yaw control input (-1.0 to 1.0)
         self.roll_input = 0.0 #Roll control input (-1.0 to 1.0)
+        
+        # Snap orientation to initial velocity
+        from physics import snap_orientation_to_velocity
+        snap_orientation_to_velocity(self)
 
     def think(self, entities):
         pass

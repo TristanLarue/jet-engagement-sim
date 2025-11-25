@@ -33,33 +33,38 @@ def create_instance(shape: str = "missile", position: Tuple[float, float, float]
 def update_instance(entity):
     entity.viz_instance.pos = vp.vector(*tuple(entity.p))
     
-    # Update orientation using pitch, yaw, roll
+    # Get rotation matrix (same as physics.py)
     pitch_rad = np.radians(entity.pitch)
     yaw_rad = np.radians(entity.yaw)
     roll_rad = np.radians(entity.roll)
     
-    # Calculate rotation matrix to get axis direction
-    cy, sy = np.cos(yaw_rad), np.sin(yaw_rad)
-    cp, sp = np.cos(pitch_rad), np.sin(pitch_rad)
     cr, sr = np.cos(roll_rad), np.sin(roll_rad)
+    cp, sp = np.cos(pitch_rad), np.sin(pitch_rad)
+    cy, sy = np.cos(yaw_rad), np.sin(yaw_rad)
     
-    # Forward direction (X axis after rotation)
-    forward_x = cy * cp
-    forward_y = sy * cp
-    forward_z = -sp
+    # Rotation matrix: Rz @ Ry @ Rx (yaw, pitch, roll)
+    Rz = np.array([[cy, -sy, 0.0],
+                   [sy,  cy, 0.0],
+                   [0.0, 0.0, 1.0]])
+    Ry = np.array([[ cp, 0.0, sp],
+                   [0.0, 1.0, 0.0],
+                   [-sp, 0.0, cp]])
+    Rx = np.array([[1.0, 0.0, 0.0],
+                   [0.0,  cr, -sr],
+                   [0.0,  sr,  cr]])
+    R = Rz @ Ry @ Rx
     
-    # Up direction (Y axis after rotation)
-    up_x = cy * sp * sr - sy * cr
-    up_y = sy * sp * sr + cy * cr
-    up_z = cp * sr
+    # Body axes in world frame
+    forward = R @ np.array([1.0, 0.0, 0.0])  # Body X -> forward
+    up = R @ np.array([0.0, 1.0, 0.0])       # Body Y -> up
     
     # Set axis and up for the shape
     if hasattr(entity, 'target'):  # Missile (cylinder)
-        entity.viz_instance.axis = vp.vector(forward_x, forward_y, forward_z) * entity.viz_instance.length
+        entity.viz_instance.axis = vp.vector(*forward) * entity.viz_instance.length
     else:  # Jet (box)
-        entity.viz_instance.axis = vp.vector(forward_x, forward_y, forward_z)
+        entity.viz_instance.axis = vp.vector(*forward)
     
-    entity.viz_instance.up = vp.vector(up_x, up_y, up_z)
+    entity.viz_instance.up = vp.vector(*up)
     
     # Update velocity arrow
     arrow_id = id(entity.viz_instance)

@@ -31,11 +31,12 @@ def render_tick(tick_count: int, entities: list):
         ent.think(entities) #entities covers all simulation data to analyze & predict
         # 2. Apply angular velocity
         physics.apply_angular_velocity(ent)
-        physics.apply_restoring_torque(ent)
+        if ent.shape == "jet":# Because missiles are acting up
+            physics.apply_restoring_torque(ent)
         # 3. Linear Velocity
         physics.apply_thrust(ent)
         physics.apply_gravity(ent)
-        physics.apply_lift_with_g_limit(ent)
+        physics.apply_lift(ent)
         #Drag at the end to assure stability at cruising speed
         physics.apply_drag(ent) #Same system as minecraft physics
         # 4. Apply linear velocity changes

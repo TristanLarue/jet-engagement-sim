@@ -1,5 +1,5 @@
 import numpy as np
-SIMULATION_DURATION = 12
+SIMULATION_DURATION = 120
 TICK_RATE = 120  # ticks per second
 AIR_DENSITY = 1.225  # kg/m^3 at sea level
 BOX_SIZE = np.array([20000.0, 5000.0, 20000.0])  # 20km x 5km x 20km
@@ -23,8 +23,6 @@ def setup_entities():
         max_lift_coefficient=1.50
     )
     
-    # Set jet's initial orientation to face its velocity direction
-    target_jet.yaw = 180.0  # Face -X direction to match velocity
     
     # Create 3 missiles at near side of box (X=-9000), equally spaced along Z
     missile_1 = missile(
@@ -40,9 +38,9 @@ def setup_entities():
         reference_area=0.13,
         burn_time=60.0,
         target_entity=target_jet,
-        thrust=120.0
+        thrust=120.0,
+        max_lift_coefficient=0.3
     )
-    missile_1.pitch = 90.0  # Point upward to match velocity
     
     missile_2 = missile(
         position=(-9000.0, 0.0, 5000.0),
@@ -57,9 +55,9 @@ def setup_entities():
         reference_area=0.13,
         burn_time=60.0,
         target_entity=target_jet,
-        thrust=120.0
+        thrust=120.0,
+        max_lift_coefficient=0.3
     )
-    missile_2.pitch = 90.0  # Point upward to match velocity
     
     missile_3 = missile(
         position=(-9000.0, 0.0, -5000.0),
@@ -74,8 +72,8 @@ def setup_entities():
         reference_area=0.13,
         burn_time=60.0,
         target_entity=target_jet,
-        thrust=120.0
+        thrust=120.0,
+        max_lift_coefficient=0.3
     )
-    missile_3.pitch = 90.0  # Point upward to match velocity
     
     return [missile_1, missile_2, missile_3, target_jet]

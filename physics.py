@@ -1,6 +1,22 @@
 import numpy as np
 from config import AIR_DENSITY, TICK_RATE
 
+def snap_orientation_to_velocity(ent):
+    """Align entity orientation to match its velocity direction"""
+    v_mag = np.linalg.norm(ent.v)
+    if v_mag > 0:
+        v_norm = ent.v / v_mag
+        # Yaw: horizontal angle (XZ plane)
+        ent.yaw = np.degrees(np.arctan2(v_norm[0], v_norm[2]))
+        # Pitch: vertical angle
+        horizontal_mag = np.sqrt(v_norm[0]**2 + v_norm[2]**2)
+        ent.pitch = np.degrees(np.arctan2(v_norm[1], horizontal_mag))
+        ent.roll = 0.0
+    else:
+        ent.pitch = 0.0
+        ent.yaw = 0.0
+        ent.roll = 0.0
+
 def get_rotation_matrix(ent):
     roll_rad = np.radians(ent.roll)
     pitch_rad = np.radians(ent.pitch)
@@ -22,13 +38,16 @@ def get_rotation_matrix(ent):
 def get_thrust_dir(ent): #Returns the "forward" unit vector of the plane
     return get_rotation_matrix(ent) @ np.array([1.0, 0.0, 0.0])
 
-def get_aoa(ent):#The angle of difference between the fuselage and the velocity (from -90 to +90 degrees)
-    velocity_magnitude = np.linalg.norm(ent.v)
-    if velocity_magnitude == 0:
+def get_aoa(ent):
+    v_mag = np.linalg.norm(ent.v)
+    if v_mag == 0.0:
         return 0.0
-    velocity_unit = ent.v / velocity_magnitude
-    cos_angle = np.clip(np.dot(get_thrust_dir(ent), velocity_unit), -1.0, 1.0)
-    return np.arccos(cos_angle) 
+    # Velocity in body coordinates
+    R = get_rotation_matrix(ent) # !!! multiply a body vector with R to get a world vector !!!
+    v_body = R.T @ ent.v # Litterally the opposite of R, Makes a world vector become a body vector when multiplied
+    forward_c = v_body[0] # forward component of wind
+    up_c = v_body[1] # "up" component
+    return np.arctan2(up_c, forward_c)
 
 def get_current_drag_coefficient(ent): #Returns a simplified real time drag coefficient based on simplified AoA (exponential)
     aoa = get_aoa(ent)
@@ -38,18 +57,21 @@ def get_current_drag_coefficient(ent): #Returns a simplified real time drag coef
     return ent.min_drag_coefficient + (ent.max_drag_coefficient - ent.min_drag_coefficient) * (aoa_ratio ** 2)
 
 def get_current_lift_coefficient(ent): #Returns a simplified real time lift coefficient based on simplified AoA (linear)
-    aoa = get_aoa(ent)
-    aoa_deg = np.degrees(aoa)
+    # linear from -2°(0_lift) to 15°(max_lift) to 20°(0_lift)
+    aoa_deg = np.degrees(get_aoa(ent))
     if aoa_deg <= -2.0:
         return 0.0
-    elif aoa_deg <= 15.0:
+    if aoa_deg <= 15.0:
         return ent.max_lift_coefficient * ((aoa_deg + 2.0) / 17.0)
-    else:
-        return 0.0
+    if aoa_deg < 20.0: #stall region// lift breaks past a critical aoa angle (20 in our simulation)
+        lift_decay = (aoa_deg - 15.0) / 5.0  # 0 at 15°, 1 at 20°
+        return ent.max_lift_coefficient * (1.0 - lift_decay)
+    return 0.0 #TOP GUN THROTTLE SPLIT SCENE BABYYYYYYYYYYYYY, a big part of this simulation and why I made it was to see if the AI could actually find crazy maneuvers like this line
+
+
 
 def apply_angular_velocity(ent):
     velocity_magnitude = np.linalg.norm(ent.v)
-    
     # Pitch control with g-limit
     if velocity_magnitude > 0:
         max_pitch_rate = (ent.g_limit * 9.81 / velocity_magnitude) * (180.0 / np.pi)
@@ -68,62 +90,35 @@ def apply_angular_velocity(ent):
     ent.roll = ((ent.roll + 180.0) % 360.0) - 180.0
 
 def apply_restoring_torque(ent):
-    velocity_magnitude = np.linalg.norm(ent.v)
-    if velocity_magnitude == 0:
+    v_mag = np.linalg.norm(ent.v)
+    if v_mag == 0: 
         return
-    
-    stability_constant = 0.00001
-    
-    # Get forward direction from orientation
-    forward_dir = get_thrust_dir(ent)
-    velocity_dir = ent.v / velocity_magnitude
-    
-    # YAW: Compare horizontal components (ignore Y axis)
-    forward_horizontal = np.array([forward_dir[0], 0.0, forward_dir[2]])
-    velocity_horizontal = np.array([velocity_dir[0], 0.0, velocity_dir[2]])
-    
-    forward_h_mag = np.linalg.norm(forward_horizontal)
-    velocity_h_mag = np.linalg.norm(velocity_horizontal)
-    
-    if forward_h_mag > 0 and velocity_h_mag > 0:
-        forward_horizontal = forward_horizontal / forward_h_mag
-        velocity_horizontal = velocity_horizontal / velocity_h_mag
-        
-        # Cross product to determine sign (left/right)
-        cross_yaw = forward_horizontal[0] * velocity_horizontal[2] - forward_horizontal[2] * velocity_horizontal[0]
-        dot_yaw = np.clip(np.dot(forward_horizontal, velocity_horizontal), -1.0, 1.0)
-        yaw_error = np.degrees(np.arccos(dot_yaw))
-        if cross_yaw < 0:
-            yaw_error = -yaw_error
-        
-        restoring_yaw_rate = stability_constant * velocity_magnitude**2 * yaw_error
-        ent.yaw += restoring_yaw_rate / TICK_RATE
-    
-    # PITCH: Compare vertical angle (side view, XY plane for forward dir)
-    forward_vertical = np.array([np.linalg.norm([forward_dir[0], forward_dir[2]]), forward_dir[1]])
-    velocity_vertical = np.array([np.linalg.norm([velocity_dir[0], velocity_dir[2]]), velocity_dir[1]])
-    
-    forward_v_mag = np.linalg.norm(forward_vertical)
-    velocity_v_mag = np.linalg.norm(velocity_vertical)
-    
-    if forward_v_mag > 0 and velocity_v_mag > 0:
-        forward_vertical = forward_vertical / forward_v_mag
-        velocity_vertical = velocity_vertical / velocity_v_mag
-        
-        # Cross product to determine sign (up/down)
-        cross_pitch = forward_vertical[0] * velocity_vertical[1] - forward_vertical[1] * velocity_vertical[0]
-        dot_pitch = np.clip(np.dot(forward_vertical, velocity_vertical), -1.0, 1.0)
-        pitch_error = np.degrees(np.arccos(dot_pitch))
-        if cross_pitch < 0:
-            pitch_error = -pitch_error
-        
-        restoring_pitch_rate = stability_constant * velocity_magnitude**2 * pitch_error
-        ent.pitch += restoring_pitch_rate / TICK_RATE
-    
-    # Normalize angles to [-180, 180]
+    d = ent.v / v_mag
+    yaw_target = np.degrees(np.arctan2(d[2], d[0]))
+    h = np.hypot(d[0], d[2])
+    pitch_target = 0.0 if h == 0 else np.degrees(np.arctan2(d[1], h))
+
+    yaw_error = (yaw_target - ent.yaw + 180.0) % 360.0 - 180.0
+    pitch_error = (pitch_target - ent.pitch + 180.0) % 360.0 - 180.0
+
+    max_rate = min(ent.max_angular_rate, 0.0003 * v_mag * v_mag)  # deg/s
+    step = max_rate / TICK_RATE
+    if step <= 0.0:
+        return
+
+    if abs(yaw_error) <= step:
+        ent.yaw = yaw_target
+    else:
+        ent.yaw += step if yaw_error > 0.0 else -step
+
+    if abs(pitch_error) <= step:
+        ent.pitch = pitch_target
+    else:
+        ent.pitch += step if pitch_error > 0.0 else -step
+
     ent.pitch = ((ent.pitch + 180.0) % 360.0) - 180.0
-    ent.yaw = ((ent.yaw + 180.0) % 360.0) - 180.0
-    ent.roll = ((ent.roll + 180.0) % 360.0) - 180.0
+    ent.yaw   = ((ent.yaw   + 180.0) % 360.0) - 180.0
+    ent.roll  = ((ent.roll  + 180.0) % 360.0) - 180.0
 
 def apply_thrust(ent):
     thrust_dir = get_thrust_dir(ent)
@@ -133,28 +128,38 @@ def apply_thrust(ent):
 def apply_gravity(ent):
     ent.v += np.array([0.0, -9.81, 0.0]) / TICK_RATE
 
-def apply_lift_with_g_limit(ent):
+def apply_lift(ent):
     velocity_magnitude = np.linalg.norm(ent.v)
     if velocity_magnitude == 0:
         return
     
-    # Calculate lift direction (up vector)
+    # Body "up" in world space (same as before)
     lift_dir = get_rotation_matrix(ent) @ np.array([0.0, 1.0, 0.0])
     
-    # Calculate lift coefficient
+    # Flow direction (air hitting the aircraft) = opposite of velocity
+    velocity_unit = ent.v / velocity_magnitude
+    flow_dir = -velocity_unit
+
+    # Project body-up onto plane perpendicular to the flow
+    lift_dir = lift_dir - np.dot(lift_dir, flow_dir) * flow_dir
+    lift_dir_norm = np.linalg.norm(lift_dir)
+    if lift_dir_norm == 0.0:
+        return
+    lift_dir /= lift_dir_norm
+
+    # Lift coefficient from your AoA model
     lift_coefficient = get_current_lift_coefficient(ent)
+    if lift_coefficient == 0.0:
+        return
     
-    # Calculate lift acceleration
+    # Lift magnitude
     lift_force = 0.5 * AIR_DENSITY * velocity_magnitude**2 * lift_coefficient * ent.reference_area
     lift_acc_magnitude = lift_force / ent.mass
+
+    # Final lift acceleration
     lift_acc = lift_acc_magnitude * lift_dir
     
-    # Apply g-limit
-    lift_magnitude = np.linalg.norm(lift_acc)
-    max_lift_acc = ent.g_limit * 9.81
-    if lift_magnitude > max_lift_acc:
-        lift_acc = (lift_acc / lift_magnitude) * max_lift_acc
-    
+    # No G-limit here: just apply it directly
     ent.v += lift_acc / TICK_RATE
 
 def apply_drag(ent):
