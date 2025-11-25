@@ -1,31 +1,59 @@
 import vpython as vp
 from typing import Tuple, Optional
 import numpy as np
+import physics
 
 # Global storage for UI panels and velocity arrows
 ui_panels = {}
 velocity_arrows = {}
+forward_arrows = {}  # Store forward direction arrows
+joystick_canvases = {}  # Store canvas, background, orientation circle, velocity circle for each entity
 
 def create_instance(shape: str = "missile", position: Tuple[float, float, float] = (0.0, 0.0, 0.0), size: float = 100, opacity: float = 1.0, make_trail: bool = False, trail_radius: float = 0.05):
     pos = vp.vector(*position)
     
-    # Create shape based on type
-    if shape == "jet":
-        # Jet as a box (flat rectangle) - length is forward, height is up, width is wingspan
-        obj = vp.box(pos=pos, length=size*2, height=size*0.2, width=size*1.5, opacity=opacity, color=vp.color.red, make_trail=make_trail)
-    else:
-        # Missile as a cylinder
-        obj = vp.cylinder(pos=pos, axis=vp.vector(size, 0, 0), radius=size*0.3, opacity=opacity, color=vp.color.blue, make_trail=make_trail)
+    # Create invisible placeholder object for ID tracking
+    obj = vp.sphere(pos=pos, radius=0.1, visible=False, make_trail=make_trail, trail_radius=trail_radius)
     
-    obj.visible = True
+    # Create velocity arrow (yellow)
+    velocity_arrow = vp.arrow(pos=pos, axis=vp.vector(1, 0, 0), color=vp.color.yellow, shaftwidth=size*0.2)
+    velocity_arrows[id(obj)] = velocity_arrow
     
-    # Create velocity arrow
-    arrow = vp.arrow(pos=pos, axis=vp.vector(1, 0, 0), color=vp.color.yellow, shaftwidth=size*0.2)
-    velocity_arrows[id(obj)] = arrow
+    # Create forward direction arrow (red)
+    forward_arrow = vp.arrow(pos=pos, axis=vp.vector(1, 0, 0), color=vp.color.red, shaftwidth=size*0.2)
+    forward_arrows[id(obj)] = forward_arrow
     
-    # Create 2D UI panel for this instance without background box
+    # Create text info and joystick side by side
     ui_label = vp.wtext(text="")
+    
+    # Create joystick panel
+    joystick_canvas = vp.graph(width=200, height=200, xmin=-1.2, xmax=1.2, ymin=-1.2, ymax=1.2, 
+                                xticks=False, yticks=False, background=vp.color.gray(0.9))
+    
+    # Draw square boundary
+    boundary = vp.gcurve(color=vp.color.black, graph=joystick_canvas)
+    boundary.plot(pos=[(-1, -1), (1, -1), (1, 1), (-1, 1), (-1, -1)])
+    
+    # Draw crosshair
+    crosshair_h = vp.gcurve(color=vp.color.gray(0.7), graph=joystick_canvas)
+    crosshair_h.plot(pos=[(-1, 0), (1, 0)])
+    crosshair_v = vp.gcurve(color=vp.color.gray(0.7), graph=joystick_canvas)
+    crosshair_v.plot(pos=[(0, -1), (0, 1)])
+    
+    # Create orientation circle (big, opaque)
+    orientation_circle = vp.gdots(color=vp.color.blue, size=15, graph=joystick_canvas)
+    orientation_circle.plot(pos=(0, 0))
+    
+    # Create velocity circle (small, semi-transparent)
+    velocity_circle = vp.gdots(color=vp.color.red, size=8, graph=joystick_canvas)
+    velocity_circle.plot(pos=(0, 0))
+    
     ui_panels[id(obj)] = ui_label
+    joystick_canvases[id(obj)] = {
+        'canvas': joystick_canvas,
+        'orientation': orientation_circle,
+        'velocity': velocity_circle
+    }
     
     return obj
 
@@ -33,52 +61,32 @@ def create_instance(shape: str = "missile", position: Tuple[float, float, float]
 def update_instance(entity):
     entity.viz_instance.pos = vp.vector(*tuple(entity.p))
     
-    # Get rotation matrix (same as physics.py)
-    pitch_rad = np.radians(entity.pitch)
-    yaw_rad = np.radians(entity.yaw)
-    roll_rad = np.radians(entity.roll)
-    
-    cr, sr = np.cos(roll_rad), np.sin(roll_rad)
-    cp, sp = np.cos(pitch_rad), np.sin(pitch_rad)
-    cy, sy = np.cos(yaw_rad), np.sin(yaw_rad)
-    
-    # Rotation matrix: Rz @ Ry @ Rx (yaw, pitch, roll)
-    Rz = np.array([[cy, -sy, 0.0],
-                   [sy,  cy, 0.0],
-                   [0.0, 0.0, 1.0]])
-    Ry = np.array([[ cp, 0.0, sp],
-                   [0.0, 1.0, 0.0],
-                   [-sp, 0.0, cp]])
-    Rx = np.array([[1.0, 0.0, 0.0],
-                   [0.0,  cr, -sr],
-                   [0.0,  sr,  cr]])
-    R = Rz @ Ry @ Rx
+    R = physics.get_rotation_matrix(entity.roll, entity.pitch, entity.yaw)
     
     # Body axes in world frame
-    forward = R @ np.array([1.0, 0.0, 0.0])  # Body X -> forward
-    up = R @ np.array([0.0, 1.0, 0.0])       # Body Y -> up
+
+    forward = physics.get_forward_dir(R)
     
-    # Set axis and up for the shape
-    if hasattr(entity, 'target'):  # Missile (cylinder)
-        entity.viz_instance.axis = vp.vector(*forward) * entity.viz_instance.length
-    else:  # Jet (box)
-        entity.viz_instance.axis = vp.vector(*forward)
-    
-    entity.viz_instance.up = vp.vector(*up)
-    
-    # Update velocity arrow
     arrow_id = id(entity.viz_instance)
+    arrow_length = 200.0  # Fixed arrow length for visibility
+    
+    # Update velocity arrow (yellow)
     if arrow_id in velocity_arrows:
-        arrow = velocity_arrows[arrow_id]
-        arrow.pos = vp.vector(*tuple(entity.p))
+        velocity_arrow = velocity_arrows[arrow_id]
+        velocity_arrow.pos = vp.vector(*tuple(entity.p))
         
         velocity_magnitude = np.linalg.norm(entity.v)
         if velocity_magnitude > 0:
             velocity_normalized = entity.v / velocity_magnitude
-            arrow_length = 200.0  # Fixed arrow length for visibility
-            arrow.axis = vp.vector(*velocity_normalized) * arrow_length
+            velocity_arrow.axis = vp.vector(*velocity_normalized) * arrow_length
         else:
-            arrow.axis = vp.vector(1, 0, 0)
+            velocity_arrow.axis = vp.vector(1, 0, 0)
+    
+    # Update forward direction arrow (red)
+    if arrow_id in forward_arrows:
+        forward_arrow = forward_arrows[arrow_id]
+        forward_arrow.pos = vp.vector(*tuple(entity.p))
+        forward_arrow.axis = vp.vector(*forward) * arrow_length
     
     # Update UI panel
     panel_id = id(entity.viz_instance)
@@ -106,8 +114,10 @@ def update_instance(entity):
                 f"Speed: {speed:.1f} m/s<br>"
                 f"Throttle: {entity.throttle*100:.0f}%<br>"
                 f"ETA: {interception_time:.2f} s<br>"
+                f"Pitch Rate: {entity.pitch_v:.1f}°/s<br>"
+                f"Yaw Rate: {entity.yaw_v:.1f}°/s<br>"
+                f"Roll Rate: {entity.roll_v:.1f}°/s<br>"
                 f"</span>"
-                f"<hr>"
             )
         
         elif hasattr(entity, 'throttle'):  # Jet
@@ -122,9 +132,31 @@ def update_instance(entity):
                 f"Yaw: {entity.yaw:.1f}°<br>"
                 f"Speed: {speed:.1f} m/s<br>"
                 f"Throttle: {entity.throttle*100:.0f}%<br>"
+                f"Pitch Rate: {entity.pitch_v:.1f}°/s<br>"
+                f"Yaw Rate: {entity.yaw_v:.1f}°/s<br>"
+                f"Roll Rate: {entity.roll_v:.1f}°/s<br>"
                 f"</span>"
-                f"<hr>"
             )
+    
+    # Update joystick panel
+    if panel_id in joystick_canvases:
+        joystick = joystick_canvases[panel_id]
+        # Map angles to -1 to 1 range (clamp at ±90 degrees for visualization)
+        roll_normalized = np.clip(entity.roll / 90.0, -1.0, 1.0)  # Left-right (x-axis)
+        pitch_normalized = np.clip(entity.pitch / 90.0, -1.0, 1.0)  # Up-down (y-axis)
+        
+        # Map angular velocities to -1 to 1 range (scale for visibility)
+        # Using ±180°/s as max for visualization
+        roll_vel_normalized = np.clip(entity.roll_v / 180.0, -1.0, 1.0)
+        pitch_vel_normalized = np.clip(entity.pitch_v / 180.0, -1.0, 1.0)
+        
+        # Clear and update orientation circle (current angles)
+        joystick['orientation'].data = []
+        joystick['orientation'].plot(pos=(roll_normalized, pitch_normalized))
+        
+        # Clear and update velocity circle (angular velocities)
+        joystick['velocity'].data = []
+        joystick['velocity'].plot(pos=(roll_vel_normalized, pitch_vel_normalized))
     
     return
 

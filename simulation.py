@@ -1,6 +1,6 @@
 import numpy as np
 from viz import update_instance
-from config import TICK_RATE, setup_entities, SIMULATION_DURATION
+from config import TICK_RATE, setup_entities, SIMULATION_DURATION, SIMULATION_SPEED
 import time
 import physics
 
@@ -8,7 +8,7 @@ def initialize_simulation():
     tick_total = 0
     # Setup entities from config
     entities = setup_entities()
-    while tick_total < TICK_RATE * SIMULATION_DURATION:
+    while tick_total < TICK_RATE / SIMULATION_SPEED * SIMULATION_DURATION:
         try:
             render_tick(tick_total, entities)
             tick_total += 1
@@ -29,20 +29,19 @@ def render_tick(tick_count: int, entities: list):
         #=====APPLY ALL PHYSICS FOR THAT TICK=====
         # 1. Decision-Making
         ent.think(entities) #entities covers all simulation data to analyze & predict
-        # 2. Apply angular velocity
-        physics.apply_angular_velocity(ent)
-        if ent.shape == "jet":# Because missiles are acting up
-            physics.apply_restoring_torque(ent)
-        # 3. Linear Velocity
-        physics.apply_thrust(ent)
-        physics.apply_gravity(ent)
-        physics.apply_lift(ent)
-        #Drag at the end to assure stability at cruising speed
-        physics.apply_drag(ent) #Same system as minecraft physics
-        # 4. Apply linear velocity changes
-        physics.apply_velocity(ent)
+        # 3. Apply angular velocity changes
+        #Could apply all at once or one by one, no big difference for now
+        ent.apply_thrust()
+        ent.apply_drag()
+        ent.apply_lift()
+        ent.apply_gravity()
+        # 5. Apply linear velocity changes
+        ent.apply_rotation_inputs()
+        ent.apply_rotation_damping()
+        ent.apply_translation_velocity()
+        ent.apply_rotation_velocity()
         update_instance(ent)
     
     # Balance FPS with the render speed
-    if tick_start_time + (1/TICK_RATE) > time.perf_counter():
-        time.sleep((tick_start_time + (1/TICK_RATE)) - time.perf_counter())
+    if tick_start_time + (SIMULATION_SPEED/TICK_RATE) > time.perf_counter():
+        time.sleep((tick_start_time + (SIMULATION_SPEED/TICK_RATE)) - time.perf_counter())

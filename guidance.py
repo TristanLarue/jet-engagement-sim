@@ -1,61 +1,83 @@
 import numpy as np
 import physics
 
-def jet_ai_think(entities: list, jet_entity):
-    target_pitch = 0.0 #Target level flight
-    target_speed = 250.0 #Target cruising speed (m/s)
-    target_roll = 0.0 #Keep wings level
+def jet_float_think(entities: list, jet_entity):
+    """
+    Simple stabilization logic for the jet:
+    - Keep pitch above 5 degrees to stay afloat
+    - Correct roll if it exceeds 5 degrees on either side
+    """
+    # Pitch control: if below 14 degrees, pitch up
+    if jet_entity.pitch < 14.0:
+        jet_entity.pitch_input = 0.5  # Pitch up
+    elif jet_entity.pitch > 15.0:
+        jet_entity.pitch_input = -0.3  # Pitch down slightly to avoid over-correction
+    else:
+        jet_entity.pitch_input = 0.0  # Hold steady
     
-    current_speed = np.linalg.norm(jet_entity.v)
-    
-    #Pitch stabilization with proportional control
-    pitch_error = target_pitch - jet_entity.pitch
-    # Normalize error to [-180, 180]
-    while pitch_error > 180.0:
-        pitch_error -= 360.0
-    while pitch_error < -180.0:
-        pitch_error += 360.0
-    jet_entity.pitch_input = np.clip(pitch_error * 0.05, -1.0, 1.0)
-    
-    #Roll stabilization
-    roll_error = target_roll - jet_entity.roll
-    # Normalize error to [-180, 180]
-    while roll_error > 180.0:
-        roll_error -= 360.0
-    while roll_error < -180.0:
-        roll_error += 360.0
-    jet_entity.roll_input = np.clip(roll_error * 0.02, -1.0, 1.0)
-    
-    #Speed control via throttle
-    speed_error = target_speed - current_speed
-    base_throttle = 0.7
-    jet_entity.throttle = np.clip(base_throttle + speed_error * 0.002, 0.1, 1.0)
-    
+    # Roll correction: keep wings level
+    if jet_entity.roll > 5.0:
+        # Rolling right, correct by rolling left
+        jet_entity.roll_input = -0.5
+    elif jet_entity.roll < -5.0:
+        # Rolling left, correct by rolling right
+        jet_entity.roll_input = 0.5
+    else:
+        jet_entity.roll_input = 0.0  # Wings level
 
 def missile_direct_attack_think(entities: list, missile_entity):
-    target_entity = missile_entity.target
-    if target_entity:
-        direction_to_target = target_entity.p - missile_entity.p
-        distance = np.linalg.norm(direction_to_target)
-        
-        if distance > 0:
-            target_dir = direction_to_target / distance
-            
-            # Calculate desired pitch (vertical angle)
-            desired_pitch = np.degrees(np.arctan2(target_dir[1], np.sqrt(target_dir[0]**2 + target_dir[2]**2)))
-            pitch_error = desired_pitch - missile_entity.pitch
-            
-            # Calculate desired heading in horizontal plane
-            desired_yaw = np.degrees(np.arctan2(target_dir[0], target_dir[2]))
-            yaw_error = desired_yaw - missile_entity.yaw
-            
-            # Normalize yaw error to [-180, 180]
-            while yaw_error > 180.0:
-                yaw_error -= 360.0
-            while yaw_error < -180.0:
-                yaw_error += 360.0
-            
-            # Use roll to turn towards target (bank-to-turn)
-            missile_entity.pitch_input = np.clip(pitch_error / 30.0, -1.0, 1.0)
-            missile_entity.roll_input = np.clip(yaw_error / 90.0, -1.0, 1.0)
-            missile_entity.yaw_input = 0.0
+    """
+    Predictive guidance for missile:
+    - Calculate where the target will be based on current position + velocity * (distance/missile_speed)
+    - Point the missile toward the predicted intercept point
+    """
+    if not hasattr(missile_entity, 'target') or missile_entity.target is None:
+        return
+    
+    target = missile_entity.target
+    
+    # Calculate relative position
+    relative_pos = target.p - missile_entity.p
+    distance = np.linalg.norm(relative_pos)
+    
+    if distance == 0.0:
+        return
+    
+    # Calculate missile speed
+    missile_speed = np.linalg.norm(missile_entity.v)
+    
+    if missile_speed == 0.0:
+        missile_speed = 1.0  # Avoid division by zero
+    
+    # Predict target position
+    time_to_intercept = distance / missile_speed
+    predicted_target_pos = target.p + target.v * time_to_intercept
+    
+    # Calculate vector to predicted intercept point
+    intercept_vector = predicted_target_pos - missile_entity.p
+    intercept_distance = np.linalg.norm(intercept_vector)
+    
+    if intercept_distance == 0.0:
+        return
+    
+    intercept_direction = intercept_vector / intercept_distance
+    
+    # Get missile's current forward direction
+    R = physics.get_rotation_matrix(missile_entity.roll, missile_entity.pitch, missile_entity.yaw)
+    forward_dir = physics.get_forward_dir(R)
+    
+    # Calculate error between current heading and desired heading
+    # Project onto pitch and yaw corrections
+    up_dir = physics.get_up_dir(R)
+    right_dir = physics.get_right_dir(R)
+    
+    # Pitch error: dot product with up direction
+    pitch_error = np.dot(intercept_direction, up_dir)
+    # Yaw error: dot product with right direction  
+    yaw_error = np.dot(intercept_direction, right_dir)
+    
+    # Set control inputs proportional to error
+    missile_entity.pitch_input = np.clip(pitch_error * 2.0, -1.0, 1.0)
+    # Note: yaw_input is commented out in entity class, but we can still try to use roll for turns
+    # For simplicity, we'll use roll to help with horizontal corrections
+    missile_entity.roll_input = np.clip(yaw_error * 2.0, -1.0, 1.0)
