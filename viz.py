@@ -94,22 +94,18 @@ def update_instance(entity):
         ui_label = ui_panels[panel_id]
         
         # Check entity type and format appropriate info
+        aoa = physics.get_aoa(entity.v, R)
         if hasattr(entity, 'target'):  # Missile
-            # Calculate distance to target
             distance_to_target = np.linalg.norm(entity.target.p - entity.p)
-            
-            # Calculate current speed
             speed = np.linalg.norm(entity.v)
-            
-            # Calculate interception time estimation
             if speed > 0:
                 interception_time = distance_to_target / speed
             else:
                 interception_time = float('inf')
-            
             ui_label.text = (
                 f"<span style='font-size:18px'>"
                 f"<b style='color:blue'>MISSILE</b><br>"
+                f"<b>AoA: {aoa:.1f}°</b><br>"
                 f"Distance: {distance_to_target:.1f} m<br>"
                 f"Speed: {speed:.1f} m/s<br>"
                 f"Throttle: {entity.throttle*100:.0f}%<br>"
@@ -119,14 +115,12 @@ def update_instance(entity):
                 f"Roll Rate: {entity.roll_v:.1f}°/s<br>"
                 f"</span>"
             )
-        
         elif hasattr(entity, 'throttle'):  # Jet
-            # Calculate current speed
             speed = np.linalg.norm(entity.v)
-            
             ui_label.text = (
                 f"<span style='font-size:18px'>"
                 f"<b style='color:red'>JET</b><br>"
+                f"<b>AoA: {aoa:.1f}°</b><br>"
                 f"Pitch: {entity.pitch:.1f}°<br>"
                 f"Roll: {entity.roll:.1f}°<br>"
                 f"Yaw: {entity.yaw:.1f}°<br>"

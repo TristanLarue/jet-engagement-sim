@@ -16,65 +16,73 @@ def setup_entities():
         opacity=1.0,
         make_trail=True,
         trail_radius=100.0,
-        mass=23000.0,
-        min_drag_coefficient=0.04,
-        max_drag_coefficient=0.80,
+        mass=23000.0,  # Su-27
+        cp_dist=-2.0,
+        min_drag_coefficient=0.02,
+        max_drag_coefficient=0.40,
         reference_area=62.0,
-        thrust_force=250000.0,
-        max_lift_coefficient=1.50
+        thrust_force=245000.0,
+        max_lift_coefficient=1.5
     )
     target_jet.yaw = 180.0  # Facing towards negative X direction
     
     # Create 3 missiles at near side of box (X=-9000), equally spaced along Z
     missile_1 = missile(
         position=(-9000.0, 0.0, 0.0),
-        velocity=(0.0, 1000.0, 0.0),
+        velocity=(0.0, 100.0, 0.0),
         size=100.0,
         opacity=1.0,
         make_trail=True,
         trail_radius=50.0,
-        mass=900.0,
-        min_drag_coefficient=0.40,
-        max_drag_coefficient=8.0,
+        mass=900.0,  # Patriot PAC-2
+        cp_dist=-10,
+        min_drag_coefficient=0.08,
+        max_drag_coefficient=1.60,
         reference_area=0.13,
         burn_time=60.0,
         target_entity=target_jet,
-        thrust_force=100000.0,
-        max_lift_coefficient=0.3
+        thrust_force=130000.0,
+        max_lift_coefficient=0.6
     )
-    missile_1.yaw = 90.0  # Facing towards positive Y direction
+    missile_1.pitch = 90.0  # Facing towards positive Y direction
+
+
     missile_2 = missile(
         position=(-9000.0, 0.0, 5000.0),
-        velocity=(0.0, 1000.0, 0.0),
+        velocity=(0.0, 100.0, 0.0),
         size=100.0,
         opacity=1.0,
         make_trail=True,
         trail_radius=50.0,
-        mass=900.0,
-        min_drag_coefficient=0.40,
-        max_drag_coefficient=8.0,
+        mass=900.0,  # Patriot PAC-2
+        cp_dist=-10,
+        min_drag_coefficient=0.08,
+        max_drag_coefficient=1.60,
         reference_area=0.13,
         burn_time=60.0,
         target_entity=target_jet,
-        thrust_force=100000.0,
-        max_lift_coefficient=0.3
+        thrust_force=130000.0,
+        max_lift_coefficient=0.6
     )
-    missile_2.yaw = 90.0  # Facing towards positive Y direction
+    missile_2.pitch = 90.0
+
+
     missile_3 = missile(
         position=(-9000.0, 0.0, -5000.0),
-        velocity=(0.0, 1000.0, 0.0),
+        velocity=(0.0, 100.0, 0.0),
         size=100.0,
         opacity=1.0,
         make_trail=True,
         trail_radius=50.0,
-        mass=900.0,
-        min_drag_coefficient=0.40,
-        max_drag_coefficient=8.0,
+        mass=900.0,  # Patriot PAC-2
+        cp_dist=-10,
+        min_drag_coefficient=0.08,
+        max_drag_coefficient=1.60,
         reference_area=0.13,
         burn_time=60.0,
         target_entity=target_jet,
-        thrust_force=100000.0,
-        max_lift_coefficient=0.3
+        thrust_force=130000.0,
+        max_lift_coefficient=0.6
     )
-    missile_3.yaw = 90.0  # Facing towards positive Y direction
+    missile_3.pitch = 90.0
     return [missile_1, missile_2, missile_3, target_jet]

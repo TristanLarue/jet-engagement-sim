@@ -7,12 +7,12 @@ import physics
 # A bit of object oriented programming to manage entities in a smart way
 # Base entity class that can enact common behaviors for all simulated entities
 class entity():
-    def __init__(self, shape: str, position: tuple, velocity: tuple, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float = 0.0, throttle: float = 1.0):
+    def __init__(self, shape: str, position: tuple, velocity: tuple, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float = 0.0, throttle: float = 1.0, cp_dist: float = -0.5):
         self.shape = shape
         self.p = np.array(position) #Position
         self.v = np.array(velocity) #Velocity
         self.mass = mass #Mass in kg
-        self.cp_dist = -0.5 # Distance of the center of pressure from the center of mass (USED FOR MOMENTS)
+        self.cp_dist = cp_dist # Distance of the center of pressure from the center of mass (USED FOR MOMENTS)
         self.min_drag_coefficient = min_drag_coefficient #Best-case Cd
         self.max_drag_coefficient = max_drag_coefficient #Worst-case Cd
         self.reference_area = reference_area #Reference area for aerodynamic calculations
@@ -89,8 +89,8 @@ class entity():
 # After careful consideration, 6DOF is worth it for missiles too
 # 3DOF does simplify it, but having orientation aswell isnt much more complex and will allow for more realistic behaviors
 class missile(entity):
-    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, burn_time: float, target_entity: entity, thrust_force: float, max_lift_coefficient: float = 0.0):
-        super().__init__("missile", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0)
+    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, burn_time: float, target_entity: entity, thrust_force: float, max_lift_coefficient: float = 0.0, cp_dist: float = -0.5):
+        super().__init__("missile", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0, cp_dist=cp_dist)
         self.throttle = 1.0
         self.burn_time = burn_time
         self.launch_time = time.perf_counter()
@@ -99,11 +99,11 @@ class missile(entity):
     def think(self, entities):
         if time.perf_counter() - self.launch_time > self.burn_time:
             self.throttle = 0.0
-        missile_direct_attack_think(entities, self)
+        missile_direct_attack_think(self, entities)
 
 class jet(entity):
-    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float):
-        super().__init__("jet", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0)
+    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float, cp_dist: float = -0.5):
+        super().__init__("jet", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0, cp_dist=cp_dist)
 
     def think(self, entities):
         jet_float_think(entities, self)
