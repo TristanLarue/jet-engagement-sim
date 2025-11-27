@@ -1,13 +1,13 @@
 import numpy as np
 from viz import create_instance
-from guidance import jet_float_think,missile_direct_attack_think
+from guidance import jet_ai_think,missile_direct_attack_think
 import time
 import physics
 
 # A bit of object oriented programming to manage entities in a smart way
 # Base entity class that can enact common behaviors for all simulated entities
 class entity():
-    def __init__(self, shape: str, position: tuple, velocity: tuple, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float = 0.0, throttle: float = 1.0, cp_dist: float = -0.5):
+    def __init__(self, shape: str, position: tuple, velocity: tuple, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float = 0.0, throttle: float = 1.0, cp_dist: float = -0.5,manual_control: bool = False):
         self.shape = shape
         self.p = np.array(position) #Position
         self.v = np.array(velocity) #Velocity
@@ -26,7 +26,8 @@ class entity():
         self.yaw_v = 0.0 #(deg/s)
         self.roll = 0.0 #Roll angle (deg)
         self.roll_v = 0.0 #(deg/s)
-        self.max_roll_velocity = 360.0 #(deg/s) or 60rpm 
+        self.max_roll_velocity = 360.0 #(deg/s) or 60rpm
+        self.manual_control = manual_control #If true, entity is controlled manually (no AI)
         #MAX PITCH VELOCITY WILL BE DYNAMIC BASED ON SPEED
         # Below are the control inputs from think()
         self.pitch_input = 0.0 #Pitch control input (-1.0 to 1.0)
@@ -70,17 +71,20 @@ class entity():
 
     def apply_rotation_inputs(self):
         # Apply pitch input
-        max_pitch_v = self.max_roll_velocity * (np.linalg.norm(self.v) / 300.0)  # Scale max pitch velocity with speed
-        self.pitch_v += float(self.pitch_input * max_pitch_v / physics.TICK_RATE)
+        v_mag = np.linalg.norm(self.v)
+        rotation_input_weight = physics.get_control_surface_weight(self.v, physics.get_rotation_matrix(self.roll, self.pitch, self.yaw))
+        max_pitch_v = (v_mag / 500.0)  # Scale max pitch velocity with speed
+
+        self.pitch_v += float((self.pitch_input * 90 * rotation_input_weight)*max(500/v_mag,5))/physics.TICK_RATE
         # Apply roll input
-        self.roll_v += float(self.roll_input * self.max_roll_velocity / physics.TICK_RATE)
+        self.roll_v += float(self.roll_input * self.max_roll_velocity*(1-self.roll_v/self.max_roll_velocity))/physics.TICK_RATE
 
     def apply_rotation_velocity(self):
         self.roll,self.pitch,self.yaw = physics.get_next_rotation(self.roll, self.pitch, self.yaw, self.roll_v, self.pitch_v, self.yaw_v)
     
     def apply_rotation_damping(self):
         # Simple rotational damping to prevent infinite spin
-        damping_factor = 0.98
+        damping_factor = 0.95
         self.pitch_v *= damping_factor
         self.yaw_v *= damping_factor
         self.roll_v *= damping_factor
@@ -102,8 +106,9 @@ class missile(entity):
         missile_direct_attack_think(self, entities)
 
 class jet(entity):
-    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float, cp_dist: float = -0.5):
-        super().__init__("jet", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0, cp_dist=cp_dist)
-
+    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float, cp_dist: float = -0.5, manual_control: bool = False):
+        super().__init__("jet", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0, cp_dist=cp_dist,manual_control=manual_control)
+        self.ai_reward = 0.0
     def think(self, entities):
-        jet_float_think(entities, self)
+        if not self.manual_control:
+            jet_ai_think(self, entities)

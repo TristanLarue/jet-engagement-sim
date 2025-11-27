@@ -80,7 +80,7 @@ def get_aoa(v: np.ndarray, R: np.ndarray) -> float:
 
 # EXTREMELY SIMPLIFIED LIFT COEFFICIENT CALCULATION ONLY BASED ON AOA (LINEAR)
 # Could be heavily improved in the future:
-def get_cl(v: np.ndarray, R: np.ndarray, max_cl: float)-> float: 
+def get_cl(v: np.ndarray, R: np.ndarray, max_cl: float,)-> float: 
     angle = get_aoa(v, R)
     if angle < -2.0:
         return 0.0
@@ -193,22 +193,79 @@ def get_lift_dir(v: np.ndarray, R: np.ndarray) -> np.ndarray: #Returns the "up" 
 # =====| MOMENT |===== #
 # ==================== #
 
-def get_moment(force_world: np.ndarray, R: np.ndarray, distance: float, mass: float) -> tuple[float, float]:
-    force_body = R.T @ force_world
-    tau_body = np.cross(np.array([-distance, 0.0, 0.0]), force_body)
-    # Approximate moment of inertia for a cylinder/aircraft: I ≈ (1/12) * m * L^2
-    # Using a reasonable length scale based on distance to CP
-    moment_of_inertia = mass * (abs(distance) * 10) ** 2  # Simplified inertia estimate
-    
-    # Convert torque to angular acceleration (degrees/s²) and integrate over timestep
-    pitch_angular_acc = np.degrees(tau_body[2] / moment_of_inertia)
-    yaw_angular_acc = np.degrees(tau_body[1] / moment_of_inertia)
-    
-    # Return angular velocity change for this tick as Python floats
-    pitch_vel_change = float(pitch_angular_acc / TICK_RATE)
-    yaw_vel_change = float(yaw_angular_acc / TICK_RATE)
-    
+def get_moment(
+    force_world: np.ndarray,
+    R: np.ndarray,
+    cp_dist: float,
+    mass: float
+) -> tuple[float, float]:
+    """
+    Compute pitch / yaw velocity change (deg/s) from a force applied at CP.
+
+    CP is at CM + [cp_dist, 0, 0] in body coordinates.
+    R: body -> world rotation matrix.
+
+    - Pitch axis = body Z (right wing)
+    - Yaw axis   = body Y (up)
+
+    We:
+      1) compute torque in world space: τ = r × F
+      2) project τ onto pitch and yaw axes (in world)
+      3) convert to angular velocity change per tick (deg/s)
+    """
+
+    # Degenerate cases: no moment
+    if mass <= 0.0 or cp_dist == 0.0 or np.allclose(force_world, 0.0):
+        return 0.0, 0.0
+
+    # ---- CP offset in world space ----
+    # Body offset from CM to CP
+    r_body = np.array([cp_dist, 0.0, 0.0], dtype=float)
+    # Same offset expressed in world coordinates
+    r_world = R @ r_body
+
+    # ---- Torque in world space: τ = r × F ----
+    tau_world = np.cross(r_world, force_world)  # [τx, τy, τz] in world
+
+    # ---- Rotation axes in world space ----
+    # Yaw axis = body-up in world
+    yaw_axis_world = get_up_dir(R)        # R @ [0,1,0]
+    # Pitch axis = body-right in world (rotation around the wing)
+    pitch_axis_world = get_right_dir(R)   # R @ [0,0,1]
+
+    # ---- Torque components about pitch and yaw axes ----
+    # Right-hand rule: sign of dot product gives direction
+    tau_yaw = float(np.dot(tau_world, yaw_axis_world))
+    tau_pitch = float(np.dot(tau_world, pitch_axis_world))
+
+    # ---- Approximate moments of inertia ----
+    # Characteristic length ~ nose-to-tail (based on CP distance)
+    L = max(2.0 * abs(cp_dist), 1.0)  # avoid zero
+    I_pitch = (1.0 / 12.0) * mass * (L ** 2)
+    I_yaw   = (1.0 / 12.0) * mass * (L ** 2)
+
+    # ---- Angular accelerations (rad/s²) ----
+    alpha_pitch = tau_pitch / I_pitch
+    alpha_yaw   = tau_yaw / I_yaw
+
+    # ---- Convert to Δ angular velocity (deg/s) over one tick ----
+    alpha_pitch_deg = float(np.degrees(alpha_pitch))
+    alpha_yaw_deg   = float(np.degrees(alpha_yaw))
+
+    dt = 1.0 / TICK_RATE
+    pitch_vel_change = alpha_pitch_deg * dt
+    yaw_vel_change   = alpha_yaw_deg * dt
+    print(math.ceil(pitch_vel_change),math.ceil(yaw_vel_change))
     return pitch_vel_change, yaw_vel_change
+
+
+
+def get_control_surface_weight(v: np.ndarray, R: np.ndarray) -> float:
+    angle = get_aoa(v, R)
+    if abs(angle) < 20.0:
+        return 1.0
+    return 1 - min((abs(angle)-20) / 20, 1)  # Normalize to [0, 1] over a 40 degree range
+
 
 def get_next_rotation(roll: float, pitch: float, yaw: float, roll_v: float, pitch_v: float, yaw_v: float) -> tuple[float, float, float]:
     new_pitch = (pitch + pitch_v / TICK_RATE) % 360

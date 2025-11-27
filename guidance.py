@@ -1,6 +1,16 @@
 import numpy as np
 import math
 import physics
+from deeplearning import jet_ai_step
+
+
+
+def jet_ai_think(jet_entity, entities: list):
+    """Single entry point: call AI, then apply outputs to the jet."""
+    pitch_input, roll_input, throttle = jet_ai_step(entities, jet_entity)
+    jet_entity.pitch_input = pitch_input
+    jet_entity.roll_input = roll_input
+    jet_entity.throttle = throttle
 
 def jet_float_think(entities: list, jet_entity):
     """
@@ -27,7 +37,6 @@ def jet_float_think(entities: list, jet_entity):
         jet_entity.roll_input = 0.0  # Wings level
 
 def missile_direct_attack_think(self, entities: list):
-    ''' This think step will adjust the missile's angular velocity to guide it towards its target'''
     target = None
     for e in entities:
         if e is not self and e.shape == "jet":
@@ -35,17 +44,48 @@ def missile_direct_attack_think(self, entities: list):
             break
     if target is None:
         return
-    d = target.p - self.p
+
+    p_m = self.p
+    v_m = self.v
+    p_j = target.p
+    v_j = target.v
+
+    speed_m = np.linalg.norm(v_m)
+    if speed_m == 0.0:
+        return
+
+    d = p_j - p_m
     dist = np.linalg.norm(d)
     if dist == 0.0:
         return
-    dir_world = d / dist
+
+    # rough time to go, then refine it a few times
+    t = dist / speed_m
+    for _ in range(3):
+        p_j_pred = p_j + v_j * t
+        d_pred = p_j_pred - p_m
+        dist_pred = np.linalg.norm(d_pred)
+        if dist_pred == 0.0:
+            break
+        t = dist_pred / speed_m
+
+    aim_point = p_j + v_j * t
+    aim_vec = aim_point - p_m
+    aim_dist = np.linalg.norm(aim_vec)
+    if aim_dist == 0.0:
+        return
+    dir_world = aim_vec / aim_dist
+
     R = physics.get_rotation_matrix(self.roll, self.pitch, self.yaw)
     dir_body = R.T @ dir_world  # x=fwd, y=up, z=right
+
+    # body-space errors
     pitch_err = math.degrees(math.atan2(dir_body[1], dir_body[0]))
     yaw_err   = math.degrees(math.atan2(dir_body[2], dir_body[0]))
+
     max_rate = self.max_roll_velocity
     desired_pitch_v = max(-max_rate, min(max_rate, pitch_err * 5.0))
     desired_yaw_v   = max(-max_rate, min(max_rate, yaw_err   * 5.0))
+
     self.pitch_v += (desired_pitch_v - self.pitch_v) * 0.5
     self.yaw_v   += (desired_yaw_v   - self.yaw_v)   * 0.5

@@ -1,0 +1,4 @@
+numpy>=1.26.0
+vpython>=7.6.4
+tensorflow>=2.15.0
+keras>=2.15.0
