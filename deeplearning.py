@@ -377,9 +377,12 @@ def cleanup_deeplearning():
         loss = -tf.reduce_mean(log_prob * adv_tf)
 
     grads = tape.gradient(loss, _model.trainable_variables)
-    if MAX_GRAD_NORM is not None:
-        grads, _ = tf.clip_by_global_norm(grads, MAX_GRAD_NORM)
-    _optimizer.apply_gradients(zip(grads, _model.trainable_variables))
+    if grads is not None:
+        if MAX_GRAD_NORM is not None:
+            grads, _ = tf.clip_by_global_norm(grads, MAX_GRAD_NORM)
+        _optimizer.apply_gradients(zip(grads, _model.trainable_variables))
+    else:
+        print("Warning: No gradients computed; skipping optimizer step.")
 
     print(f"Policy loss: {float(loss):.6f}")
 

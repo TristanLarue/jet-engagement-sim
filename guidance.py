@@ -18,6 +18,7 @@ def jet_float_think(entities: list, jet_entity):
     - Keep pitch above 5 degrees to stay afloat
     - Correct roll if it exceeds 5 degrees on either side
     """
+    
     # Pitch control: if below 14 degrees, pitch up
     if jet_entity.pitch < 14.0:
         jet_entity.pitch_input = 0.5  # Pitch up
@@ -35,6 +36,20 @@ def jet_float_think(entities: list, jet_entity):
         jet_entity.roll_input = 0.5
     else:
         jet_entity.roll_input = 0.0  # Wings level
+
+def jet_manual_control(jet_entity, entities=None):
+    """
+    Modular manual control guidance for jet.
+    Reads pitch/roll from viz.py global state and applies to jet_entity.
+    """
+    try:
+        import viz
+        jet_entity.pitch_input = viz.GLOBAL_MANUAL_PITCH
+        jet_entity.roll_input = viz.GLOBAL_MANUAL_ROLL
+    except Exception as e:
+        # Fallback: zero input if viz.py not loaded
+        jet_entity.pitch_input = 0.0
+        jet_entity.roll_input = 0.0
 
 def missile_direct_attack_think(self, entities: list):
     target = None

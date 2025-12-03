@@ -18,7 +18,8 @@ def setup_entities():
         make_trail=True,
         trail_radius=250.0,
         mass=23000.0,  # Su-27
-        cp_dist=-1.0,
+        length=22.0,  # Su-27 length in meters
+        cp_diff=(-1.0, 0.0, 0.0),
         min_drag_coefficient=0.02,
         max_drag_coefficient=0.40,
         reference_area=62.0,
@@ -36,7 +37,8 @@ def setup_entities():
         make_trail=True,
         trail_radius=150.0,
         mass=900.0,  # Patriot PAC-2
-        cp_dist=-1,
+        length=5.0,  # Patriot PAC-2 length in meters
+        cp_diff=(-1.0, 0.0, 0.0),
         min_drag_coefficient=0.08,
         max_drag_coefficient=1.60,
         reference_area=0.13,

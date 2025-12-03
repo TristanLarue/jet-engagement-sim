@@ -1,18 +1,19 @@
 import numpy as np
 from viz import create_instance
-from guidance import jet_ai_think,missile_direct_attack_think
+import guidance
 import time
 import physics
 
 # A bit of object oriented programming to manage entities in a smart way
 # Base entity class that can enact common behaviors for all simulated entities
 class entity():
-    def __init__(self, shape: str, position: tuple, velocity: tuple, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float = 0.0, throttle: float = 1.0, cp_dist: float = -0.5,manual_control: bool = False):
+    def __init__(self, shape: str, position: tuple, velocity: tuple, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float = 0.0, throttle: float = 1.0, cp_diff: tuple = (-0.5, 0.0, 0.0), length: float = 10.0, manual_control: bool = False):
         self.shape = shape
         self.p = np.array(position) #Position
         self.v = np.array(velocity) #Velocity
         self.mass = mass #Mass in kg
-        self.cp_dist = cp_dist # Distance of the center of pressure from the center of mass (USED FOR MOMENTS)
+        self.length = length # Length of the body (for moment of inertia: I = 1/12 * m * L²)
+        self.cp_diff = np.array(cp_diff) # 3D vector from CM to center of pressure in body space (USED FOR MOMENTS)
         self.min_drag_coefficient = min_drag_coefficient #Best-case Cd
         self.max_drag_coefficient = max_drag_coefficient #Worst-case Cd
         self.reference_area = reference_area #Reference area for aerodynamic calculations
@@ -51,17 +52,17 @@ class entity():
         R = physics.get_rotation_matrix(self.roll, self.pitch, self.yaw)
         force_world = physics.get_drag_force(self.v, self.reference_area, self.min_drag_coefficient, self.max_drag_coefficient, R)
         self.v += physics.get_drag_acc(self.v, self.mass, self.reference_area, self.min_drag_coefficient, self.max_drag_coefficient, R)
-        pitch_offset, yaw_offset = physics.get_moment(force_world, R, self.cp_dist, self.mass)
-        self.pitch_v += pitch_offset
-        self.yaw_v += yaw_offset
+        pitch_offset, yaw_offset = physics.get_force_torque(force_world, R, self.cp_diff, self.mass, self.length)
+        self.pitch_v += pitch_offset / physics.TICK_RATE
+        self.yaw_v += yaw_offset / physics.TICK_RATE
     
     def apply_lift(self):
         R = physics.get_rotation_matrix(self.roll, self.pitch, self.yaw)
         self.v += physics.get_lift_acc(self.v, self.mass, self.reference_area, self.max_lift_coefficient, R)
         force_world = physics.get_lift_force(self.v, self.reference_area, self.max_lift_coefficient, R)
-        pitch_offset, yaw_offset = physics.get_moment(force_world, R, self.cp_dist, self.mass)
-        self.pitch_v += pitch_offset
-        self.yaw_v += yaw_offset
+        pitch_offset, yaw_offset = physics.get_force_torque(force_world, R, self.cp_diff, self.mass, self.length)
+        self.pitch_v += pitch_offset / physics.TICK_RATE
+        self.yaw_v += yaw_offset / physics.TICK_RATE
     
     def apply_gravity(self):
         self.v += physics.get_gravity_acc()
@@ -80,7 +81,19 @@ class entity():
         self.roll_v += float(self.roll_input * self.max_roll_velocity*(1-self.roll_v/self.max_roll_velocity))/physics.TICK_RATE
 
     def apply_rotation_velocity(self):
-        self.roll,self.pitch,self.yaw = physics.get_next_rotation(self.roll, self.pitch, self.yaw, self.roll_v, self.pitch_v, self.yaw_v)
+        R = physics.get_rotation_matrix(self.roll, self.pitch, self.yaw)
+        # Body angular velocity: X=roll, Y=yaw, Z=pitch (body axes)
+        omega_body = np.array([self.roll_v, self.yaw_v, self.pitch_v])
+        # Transform to world-space angular velocity
+        omega_world = R @ omega_body
+        # Apply to world Euler angles
+        self.roll += omega_world[0] / physics.TICK_RATE
+        self.yaw += omega_world[1] / physics.TICK_RATE
+        self.pitch += omega_world[2] / physics.TICK_RATE
+        # Keep angles in [0, 360)
+        self.roll = self.roll % 360
+        self.pitch = self.pitch % 360
+        self.yaw = self.yaw % 360
     
     def apply_rotation_damping(self):
         # Simple rotational damping to prevent infinite spin
@@ -93,8 +106,8 @@ class entity():
 # After careful consideration, 6DOF is worth it for missiles too
 # 3DOF does simplify it, but having orientation aswell isnt much more complex and will allow for more realistic behaviors
 class missile(entity):
-    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, burn_time: float, target_entity: entity, thrust_force: float, max_lift_coefficient: float = 0.0, cp_dist: float = -0.5):
-        super().__init__("missile", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0, cp_dist=cp_dist)
+    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, burn_time: float, target_entity: entity, thrust_force: float, max_lift_coefficient: float = 0.0, cp_diff: tuple = (-0.5, 0.0, 0.0), length: float = 5.0):
+        super().__init__("missile", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0, cp_diff=cp_diff, length=length)
         self.throttle = 1.0
         self.burn_time = burn_time
         self.launch_time = time.perf_counter()
@@ -103,12 +116,11 @@ class missile(entity):
     def think(self, entities):
         if time.perf_counter() - self.launch_time > self.burn_time:
             self.throttle = 0.0
-        missile_direct_attack_think(self, entities)
+        guidance.missile_direct_attack_think(self, entities)
 
 class jet(entity):
-    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float, cp_dist: float = -0.5, manual_control: bool = False):
-        super().__init__("jet", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0, cp_dist=cp_dist,manual_control=manual_control)
+    def __init__(self, position: tuple, velocity: tuple, size: float, opacity: float, make_trail: bool, trail_radius: float, mass: float, min_drag_coefficient: float, max_drag_coefficient: float, reference_area: float, thrust_force: float, max_lift_coefficient: float, cp_diff: tuple = (-0.5, 0.0, 0.0), length: float = 22.0, manual_control: bool = False):
+        super().__init__("jet", position, velocity, mass, min_drag_coefficient, max_drag_coefficient, reference_area, thrust_force, max_lift_coefficient, throttle=1.0, cp_diff=cp_diff, length=length, manual_control=manual_control)
         self.ai_reward = 0.0
     def think(self, entities):
-        if not self.manual_control:
-            jet_ai_think(self, entities)
+        guidance.jet_manual_control(self, entities)
