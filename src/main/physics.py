@@ -81,24 +81,22 @@ def get_sideslip(velocity: np.ndarray, R: np.ndarray) -> float:
     v_body = R.T @ velocity #Apply the velocity to the body's POV
     return np.degrees(np.arctan2(v_body[2], v_body[0])) #Angle between forward and "right" axis
 
-def get_lift_coefficient(aoa: float, max_lift_coefficient: float, optimal_lift_aoa: float) -> float:
+def get_lift_coefficient(aoa: float, max_lift_coefficient: float, optimal_lift_aoa: float,zero_lift_aoa: float) -> float:
     a = ((aoa + 180.0) % 360.0) - 180.0
     if a > 90.0:
         a -= 180.0
     elif a < -90.0:
         a += 180.0
-
-    alpha0 = -2.0
     stall_pos = float(optimal_lift_aoa)
     stall_neg = -stall_pos
     cl_max = float(max_lift_coefficient)
     cl_min = -0.75 * cl_max
 
-    denom = (stall_pos - alpha0)
+    denom = (stall_pos - zero_lift_aoa)
     slope = (cl_max / denom) if abs(denom) > 1e-12 else 0.0
 
     if stall_neg <= a <= stall_pos:
-        return max(cl_min, min(cl_max, slope * (a - alpha0)))
+        return max(cl_min, min(cl_max, slope * (a - zero_lift_aoa)))
 
     if a > stall_pos:
         return (cl_max - 0.016 * (a - stall_pos) ** 2) if a <= (stall_pos + 5.0) else max(0.0, 0.8 * cl_max * (1.0 - (a - (stall_pos + 5.0)) / 70.0))
@@ -135,8 +133,24 @@ def get_drag_force(velocity: np.ndarray, air_density: float, reference_area: flo
 def get_fuselage_lift_force(velocity: np.ndarray, reference_area: float, R: np.ndarray, air_density: float, lift_coefficient: float) -> np.ndarray:
     return get_lift_force(velocity, reference_area, lift_coefficient, R, air_density)
 
-def get_sideforce_force():
-    pass
+def get_sideforce_force(velocity: np.ndarray, air_density: float, reference_area: float, max_lift_coefficient: float, R: np.ndarray, vertical_stabilizer_area_multiplier: float = 0.06, max_sideslip_degrees: float = 25.0) -> np.ndarray:
+    velocity_magnitude = float(np.linalg.norm(velocity))
+    if velocity_magnitude < 1e-12: return np.zeros(3)
+
+    airflow_direction = -velocity / velocity_magnitude
+    right_direction = get_right_dir(R)
+
+    sideforce_direction = right_direction - np.dot(right_direction, airflow_direction) * airflow_direction
+    sideforce_direction_norm = float(np.linalg.norm(sideforce_direction))
+    sideforce_direction = (sideforce_direction / sideforce_direction_norm) if sideforce_direction_norm > 1e-12 else right_direction
+
+    sideslip = float(get_sideslip(velocity, R))
+    sideslip = float(np.clip(sideslip, -max_sideslip_degrees, max_sideslip_degrees))
+
+    sideforce_coefficient = -(sideslip / max_sideslip_degrees) * float(max_lift_coefficient)
+    sideforce_magnitude = 0.5 * float(air_density) * velocity_magnitude * velocity_magnitude * (float(reference_area) * float(vertical_stabilizer_area_multiplier)) * sideforce_coefficient
+    return sideforce_magnitude * sideforce_direction
+
 
 def get_dynamic_pressure(velocity: np.ndarray, air_density: float):
     velocity_magnitude = float(np.linalg.norm(velocity))
@@ -214,6 +228,29 @@ def get_omega(force: np.ndarray, R: np.ndarray, application_point: np.ndarray, m
     torque_body = np.cross(application_point, F_body)
     alpha_body = torque_body / moment_of_inertia
     return np.degrees(alpha_body)
+
+def align_roll_to_velocity(R: np.ndarray, velocity: np.ndarray) -> np.ndarray:
+    velocity_magnitude = float(np.linalg.norm(velocity))
+    if velocity_magnitude < 1e-12: return R
+
+    forward_direction = get_forward_dir(R)
+    forward_magnitude = float(np.linalg.norm(forward_direction))
+    if forward_magnitude < 1e-12: return R
+    forward_direction = forward_direction / forward_magnitude
+
+    velocity_direction = velocity / velocity_magnitude
+    lateral_direction = velocity_direction - np.dot(velocity_direction, forward_direction) * forward_direction
+    lateral_magnitude = float(np.linalg.norm(lateral_direction))
+    if lateral_magnitude < 1e-12: return R
+
+    up_direction = (-lateral_direction) / lateral_magnitude
+    right_direction = np.cross(forward_direction, up_direction)
+    right_magnitude = float(np.linalg.norm(right_direction))
+    if right_magnitude < 1e-12: return R
+    right_direction = right_direction / right_magnitude
+
+    return np.column_stack((forward_direction, np.cross(right_direction, forward_direction), right_direction))
+
 
 def integrate_velocity(velocity: np.ndarray, acceleration: np.ndarray, dt: float) -> np.ndarray:
     return velocity + acceleration * dt

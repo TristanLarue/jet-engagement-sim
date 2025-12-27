@@ -1,3 +1,8 @@
+def _bar_01(x: float, width: int = 20) -> str:
+    x = float(_clamp(x, 0.0, 1.0))
+    fill = int(round(x * width))
+    bar = "=" * fill + "-" * (width - fill)
+    return f"|{bar}|"
 import vpython as vp
 import numpy as np
 from typing import Optional
@@ -156,11 +161,13 @@ def update_debug_labels(entity):
     if not isinstance(ci, dict):
         ci = getattr(_controlled_jet, "control_inputs", None) if _controlled_jet is not None else None
     if not isinstance(ci, dict):
-        ci = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0}
+        ci = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0, "throttle": 0.0}
 
     pitch_in = float(ci.get("pitch", 0.0))
     roll_in = float(ci.get("roll", 0.0))
     yaw_in = float(ci.get("yaw", 0.0))
+    # Use the jet's self.throttle attribute if available, otherwise fallback to control_inputs
+    throttle_in = float(getattr(entity, "throttle", ci.get("throttle", 0.0)))
 
     panel.text = (
         f"<pre style='font-size:16px; font-family:monospace; background:#f0f0f0; border:1px solid #ccc; padding:8px;'>"
@@ -171,9 +178,10 @@ def update_debug_labels(entity):
         f"AoA:     {aoa:.2f}°\n"
         f"Altitude:{altitude:.2f} m\n"
         f"\n"
-        f"PitchIn: {pitch_in:+.2f} [{_bar_pm1(pitch_in)}]\n"
-        f"RollIn:  {roll_in:+.2f} [{_bar_pm1(roll_in)}]\n"
-        f"YawIn:   {yaw_in:+.2f} [{_bar_pm1(yaw_in)}]"
+        f"PitchIn:   {pitch_in:+.2f} [{_bar_pm1(pitch_in)}]\n"
+        f"RollIn:    {roll_in:+.2f} [{_bar_pm1(roll_in)}]\n"
+        f"YawIn:     {yaw_in:+.2f} [{_bar_pm1(yaw_in)}]\n"
+        f"Throttle:  {throttle_in:.2f}  [{_bar_01(throttle_in, width=20)}]"
         f"</pre>"
     )
 
@@ -448,23 +456,38 @@ def _apply_inputs():
     q = 1.0 if "q" in _keys_down else 0.0
     yaw = e - q
 
+    shift = 1.0 if "shift" in _keys_down else 0.0
+    throttle = shift
+
     _controlled_jet.control_inputs["pitch"] = pitch
     _controlled_jet.control_inputs["roll"] = roll
     _controlled_jet.control_inputs["yaw"] = yaw
+    _controlled_jet.throttle = throttle
 
 def _on_keydown(evt):
     key = evt.key.lower()
     if key == "esc":
         # Add simulation end trigger here
         return
+    # Detect shift key
+    if evt.shift:
+        _keys_down.add("shift")
     if key in ("w", "a", "s", "d", "q", "e"):
         _keys_down.add(key)
+        _apply_inputs()
+    elif key == "shift":
+        _keys_down.add("shift")
         _apply_inputs()
 
 def _on_keyup(evt):
     key = evt.key.lower()
+    if evt.shift:
+        _keys_down.discard("shift")
     if key in ("w", "a", "s", "d", "q", "e"):
         _keys_down.discard(key)
+        _apply_inputs()
+    elif key == "shift":
+        _keys_down.discard("shift")
         _apply_inputs()
 
 def _focus_camera_on(pos_vp: vp.vector):

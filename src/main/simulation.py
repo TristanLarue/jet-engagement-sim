@@ -6,14 +6,30 @@ from viz import update_instances, clean_viz
 SIMULATION_DURATION = 120
 SIMULATION_TICKRATE = 60  # ticks per second
 SIMULATION_SPEED = 1  # real-time speed multiplier
-SIMULATION_BOX_SIZE = np.array([10000.0, 10000.0, 10000.0])  # 10km x 10km x 10km box
+SIMULATION_BOX_SIZE = np.array([20000.0, 10000.0, 20000.0])  # 20km x 10km x 20km box
 SIMULATION_RESOLUTION = np.array([1500,500])
 
 def setup_entities():
     from entities import jet
-    starting_position = np.array([0.0, 10000.0, 0.0])
-    Sukoi = presets.create_Sukoi57(starting_position,manual_control=True)
-    return [Sukoi]
+    starting_position = np.array([-10000.0, 10000.0, 0.0])
+    starting_velocity = np.array([400.0, 0.0, 0.0])
+    Sukoi = presets.create_Sukoi57(starting_position, starting_velocity, manual_control=True)
+    Patriot1 = presets.create_PAC3(
+        starting_position=np.array([9000.0, 10.0, 5000.0]),
+        starting_velocity=np.array([0.0, 10.0, 0.0]),
+        target_entity=Sukoi
+    )
+    Patriot2 = presets.create_PAC3(
+        starting_position=np.array([9000.0, 10.0, 0.0]),
+        starting_velocity=np.array([0.0, 10.0, 0.0]),
+        target_entity=Sukoi
+    )
+    Patriot3 = presets.create_PAC3(
+        starting_position=np.array([9000.0, 10.0, -5000.0]),
+        starting_velocity=np.array([0.0, 10.0, 0.0]),
+        target_entity=Sukoi
+    )
+    return [Sukoi, Patriot1, Patriot2, Patriot3]
 
 def run(epochs: int = 1, sprint: bool = False):
     epoch = 0
