@@ -117,7 +117,7 @@ def _reset_episode():
 
 def _build_state(entities, jet) -> np.ndarray:
     """21-float context vector."""
-    R = physics.get_rotation_matrix(jet.roll, jet.pitch, jet.yaw)
+    R = jet.orientation
     Rt = R.T
 
     missiles = [e for e in entities if e is not jet and getattr(e, "shape", "") == "missile"]
@@ -145,11 +145,12 @@ def _build_state(entities, jet) -> np.ndarray:
     v_body_jet = Rt @ jet.v
     ctx.extend(v_body_jet.tolist())
 
-    # Jet orientation (pitch, yaw, roll) (3)
-    ctx.extend([jet.pitch, jet.yaw, jet.roll])
+    # Jet orientation (roll, pitch, yaw) (3) - extract from matrix for AI
+    roll, pitch, yaw = physics.extract_euler_angles(jet.orientation)
+    ctx.extend([roll, pitch, yaw])
 
-    # Jet angular speeds (3)
-    ctx.extend([jet.pitch_v, jet.yaw_v, jet.roll_v])
+    # Jet angular speeds (roll_rate, pitch_rate, yaw_rate) (3) - from omega_body
+    ctx.extend([jet.omega_body[0], jet.omega_body[1], jet.omega_body[2]])
 
     # AoA, Cl, Cd (3)
     aoa = physics.get_aoa(jet.v, R)
@@ -170,11 +171,11 @@ def _compute_reward(entities, jet) -> float:
     if jet.p[1] <= 0.0:
         return 0.0
 
-    R = physics.get_rotation_matrix(jet.roll, jet.pitch, jet.yaw)
+    R = jet.orientation
     cl = physics.get_cl(jet.v, R, jet.max_lift_coefficient)
 
     # Reward only positive lift; negative or tiny Cl gets ~0
-    reward = max(float(cl), 0.0)/max(jet.roll_v, 1.0)
+    reward = max(float(cl), 0.0)/max(jet.omega_body[0], 1.0)  # use roll rate from omega_body
     return (float(np.linalg.norm(jet.v) * max(jet.p[1], 0))/1000000)*physics.get_control_surface_weight(jet.v, R)
     return reward
 

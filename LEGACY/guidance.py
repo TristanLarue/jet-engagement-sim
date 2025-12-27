@@ -19,19 +19,22 @@ def jet_float_think(entities: list, jet_entity):
     - Correct roll if it exceeds 5 degrees on either side
     """
     
+    # Extract current Euler angles from orientation matrix
+    roll, pitch, yaw = physics.extract_euler_angles(jet_entity.orientation)
+    
     # Pitch control: if below 14 degrees, pitch up
-    if jet_entity.pitch < 14.0:
+    if pitch < 14.0:
         jet_entity.pitch_input = 0.5  # Pitch up
-    elif jet_entity.pitch > 15.0:
+    elif pitch > 15.0:
         jet_entity.pitch_input = -0.3  # Pitch down slightly to avoid over-correction
     else:
         jet_entity.pitch_input = 0.0  # Hold steady
     
     # Roll correction: keep wings level
-    if jet_entity.roll > 5.0:
+    if roll > 5.0:
         # Rolling right, correct by rolling left
         jet_entity.roll_input = -0.5
-    elif jet_entity.roll < -5.0:
+    elif roll < -5.0:
         # Rolling left, correct by rolling right
         jet_entity.roll_input = 0.5
     else:
@@ -91,7 +94,7 @@ def missile_direct_attack_think(self, entities: list):
         return
     dir_world = aim_vec / aim_dist
 
-    R = physics.get_rotation_matrix(self.roll, self.pitch, self.yaw)
+    R = self.orientation
     dir_body = R.T @ dir_world  # x=fwd, y=up, z=right
 
     # body-space errors
@@ -102,5 +105,5 @@ def missile_direct_attack_think(self, entities: list):
     desired_pitch_v = max(-max_rate, min(max_rate, pitch_err * 5.0))
     desired_yaw_v   = max(-max_rate, min(max_rate, yaw_err   * 5.0))
 
-    self.pitch_v += (desired_pitch_v - self.pitch_v) * 0.5
-    self.yaw_v   += (desired_yaw_v   - self.yaw_v)   * 0.5
+    self.omega_body[2] += (desired_pitch_v - self.omega_body[2]) * 0.5  # Z-axis = pitch
+    self.omega_body[1] += (desired_yaw_v   - self.omega_body[1]) * 0.5  # Y-axis = yaw

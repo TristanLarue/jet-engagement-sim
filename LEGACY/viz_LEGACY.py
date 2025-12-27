@@ -318,7 +318,7 @@ def update_instance(entity):
     pos_vec = vp.vector(*tuple(entity.p))
     entity.viz_instance.pos = pos_vec
 
-    R = physics.get_rotation_matrix(entity.roll, entity.pitch, entity.yaw)
+    R = entity.orientation
     arrow_id = id(entity.viz_instance)
 
     v = entity.v
@@ -365,6 +365,8 @@ def update_instance(entity):
         speed = np.linalg.norm(entity.v)
 
         if entity.shape == "jet":
+            # Extract Euler angles for display
+            roll, pitch, yaw = physics.extract_euler_angles(entity.orientation)
             reward = getattr(entity, "ai_reward", None)
             reward_str = f"Reward: {reward:.3f}" if reward is not None else "Reward: N/A"
             throttle = getattr(entity, "throttle", None)
@@ -374,9 +376,9 @@ def update_instance(entity):
                 f"<b style='color:red'>JET</b><br>"
                 f"AoA: {aoa:.1f}°<br>"
                 f"Speed: {speed:.1f} m/s<br>"
-                f"Pitch: {entity.pitch:.1f}°<br>"
-                f"Roll: {entity.roll:.1f}°<br>"
-                f"Yaw: {entity.yaw:.1f}°<br>"
+                f"Pitch: {pitch:.1f}°<br>"
+                f"Roll: {roll:.1f}°<br>"
+                f"Yaw: {yaw:.1f}°<br>"
                 f"{reward_str}<br>"
                 f"{throttle_str}<br>"
                 f"</span>"
@@ -413,9 +415,11 @@ def update_instance(entity):
             js["input"].data = []
             js["input"].plot(pos=(roll_in, pitch_in))
 
+            # Extract current orientation for display
+            roll, pitch, yaw = physics.extract_euler_angles(entity.orientation)
             max_ang = 180.0
-            roll_norm = float(np.clip((entity.roll - 180) / max_ang, -1.0, 1.0))
-            pitch_norm = float(np.clip((entity.pitch - 180) / max_ang, -1.0, 1.0))
+            roll_norm = float(np.clip((roll - 180) / max_ang, -1.0, 1.0))
+            pitch_norm = float(np.clip((pitch - 180) / max_ang, -1.0, 1.0))
 
             js["orient"].data = []
             js["orient"].plot(pos=(roll_norm, pitch_norm))
