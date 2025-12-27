@@ -1,4 +1,4 @@
-# missile-jet-engagement-sim
+# jet-engagement-sim
 [ALL RIGHTS RESERVED]
 
 This project is a 3D physics-based simulation of missile and jet engagements. It models a guided missile attempting to intercept a maneuvering fighter jet using simplified six-degree-of-freedom (6-DOF) dynamics and classical guidance laws.
