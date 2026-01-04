@@ -1,13 +1,14 @@
 import numpy as np
-from viz import create_viz_instance
 from simulation import SIMULATION_TICKRATE
 import physics
-
+import deeplearning as dl
+ENTITYID_COUNTER = 0
 
 # A bit of object oriented programming to manage entities in a smart way
 # Base entity class that can enact common behaviors for all simulated entities
 class entity():
     def __init__(self, starting_position: np.ndarray, starting_velocity: np.ndarray, starting_orientation: np.ndarray, mass: float, reference_area: float, min_drag_coefficient: float, max_drag_coefficient: float, max_lift_coefficient: float, moment_of_inertia_roll: float, moment_of_inertia_pitch: float, moment_of_inertia_yaw: float, optimal_lift_aoa: float, viz_shape: dict):
+        global ENTITYID_COUNTER
         self.position = starting_position
         self.velocity = starting_velocity
         self.orientation = starting_orientation
@@ -20,13 +21,15 @@ class entity():
         self.moment_of_inertia = np.array([float(moment_of_inertia_roll), float(moment_of_inertia_pitch), float(moment_of_inertia_yaw)], dtype=float)
         self.optimal_lift_aoa = float(optimal_lift_aoa)
         self.shape = viz_shape.get("compound_shape")
-        self.viz_instance = create_viz_instance(viz_shape, self)
+        self.viz_shape = viz_shape  # Store the full viz_shape dict for visualization system
+        self.viz_id = ENTITYID_COUNTER
+        ENTITYID_COUNTER += 1
+        self.alive = True
 
 
 
 class jet(entity):
-    def __init__(self, starting_position: np.ndarray, starting_velocity: np.ndarray, starting_orientation: np.ndarray, manual_control: bool, mass: float, wingspan: float, length: float, thrust_force: float, reference_area: float, min_drag_coefficient: float, max_drag_coefficient: float, max_lift_coefficient: float, moment_of_inertia_roll: float, moment_of_inertia_pitch: float, moment_of_inertia_yaw: float, optimal_lift_aoa: float, viz_shape: dict):
-        self.manual_control = manual_control
+    def __init__(self, starting_position: np.ndarray, starting_velocity: np.ndarray, starting_orientation: np.ndarray, mass: float, wingspan: float, length: float, thrust_force: float, reference_area: float, min_drag_coefficient: float, max_drag_coefficient: float, max_lift_coefficient: float, moment_of_inertia_roll: float, moment_of_inertia_pitch: float, moment_of_inertia_yaw: float, optimal_lift_aoa: float, viz_shape: dict):
         self.control_inputs = {'pitch': 0.0, 'roll': 0.0, 'yaw': 0.0}
         self.throttle = 0.0
         super().__init__(starting_position, starting_velocity, starting_orientation, mass, reference_area, min_drag_coefficient, max_drag_coefficient, max_lift_coefficient, moment_of_inertia_roll, moment_of_inertia_pitch, moment_of_inertia_yaw, optimal_lift_aoa, viz_shape)
@@ -34,10 +37,19 @@ class jet(entity):
         self.length = length
         self.thrust_force = thrust_force
 
+    def think(self,entities):
+        
+        pitch, roll, yaw, thr = dl.jet_ai_step(entities, self)
+        self.control_inputs["pitch"] = pitch
+        self.control_inputs["roll"]  = roll
+        self.control_inputs["yaw"]   = yaw
+        self.throttle = thr
+
     # Too much logic in tick(), consider breaking it up with physics.py later
     def tick(self):
         air_density = physics.get_air_density(self.position[1])
         aoa = physics.get_angle_of_attack(self.velocity, self.orientation)
+        print((aoa))
         cd = physics.get_drag_coefficient(aoa, self.min_drag_coefficient, self.max_drag_coefficient)
         cl = physics.get_lift_coefficient(aoa, self.max_lift_coefficient, self.optimal_lift_aoa,-2.0)
         # Collect all force/torque pairs
@@ -66,6 +78,8 @@ class jet(entity):
         acceleration = total_force / self.mass
         self.velocity = physics.integrate_velocity(self.velocity, acceleration, 1.0 / SIMULATION_TICKRATE)
         self.position = physics.integrate_position(self.position, self.velocity, 1.0 / SIMULATION_TICKRATE)
+        if self.position[1] < 0.0:
+            self.alive = False
 
 class missile(entity):
     def __init__(self, starting_position, starting_velocity, starting_orientation, mass: float, thrust_force: float, max_g: float, reference_area: float, min_drag_coefficient: float, max_drag_coefficient: float, max_lift_coefficient: float, moment_of_inertia_roll: float, moment_of_inertia_pitch: float, moment_of_inertia_yaw: float, optimal_lift_aoa: float, length: float, target_entity, chase_strategy, viz_shape: dict):
@@ -77,15 +91,16 @@ class missile(entity):
         self.length = length
         self.control_inputs = {'pitch': 0.0, 'yaw': 0.0}
 
+    def think(self,entities):
+        self.chase_strategy(self)
+
     def tick(self):
         '''
         ===MISSILE ARE CURRENTLY OVERCHEATED===
         This simplification has been brought in to allow for easier testing.
-        TODO: Add proper missile Lift based on heading direction
-        - Therefor, a modification to the current lift must be applied since the missile doesnt have an "up" direction
+        TODO: Add proper missile Lift based on heading direction vs airflow and break down the lift formula in physics.py to match all sorts of aircrafts
         '''
-        self.chase_strategy(self)
-        self.orientation = physics.align_roll_to_velocity(self.orientation, self.velocity)
+        self.orientation = physics.align_roll_to_velocity(self.orientation, self.velocity) # Said cheating
         air_density = physics.get_air_density(self.position[1])
         aoa = physics.get_angle_of_attack(self.velocity, self.orientation)
         cd = physics.get_drag_coefficient(aoa, self.min_drag_coefficient, self.max_drag_coefficient)
@@ -113,3 +128,5 @@ class missile(entity):
         acceleration = total_force / self.mass
         self.velocity = physics.integrate_velocity(self.velocity, acceleration, 1.0 / SIMULATION_TICKRATE)
         self.position = physics.integrate_position(self.position, self.velocity, 1.0 / SIMULATION_TICKRATE)
+        if self.position[1] < 0.0:
+            self.alive = False

@@ -1,57 +1,59 @@
-import numpy as np
-import random
-import presets
+from __future__ import annotations
+
+import deeplearning as dl
+import sys
+import os
 import time
-from viz import update_instances, clean_viz
-SIMULATION_DURATION = 120
-SIMULATION_TICKRATE = 60  # ticks per second
-SIMULATION_SPEED = 1  # real-time speed multiplier
-SIMULATION_BOX_SIZE = np.array([20000.0, 10000.0, 20000.0])  # 20km x 10km x 20km box
-SIMULATION_RESOLUTION = np.array([1500,500])
+from typing import Any, List
 
-def setup_entities():
-    from entities import jet
-    starting_position = np.array([-10000.0, 10000.0, 0.0])
-    starting_velocity = np.array([400.0, 0.0, 0.0])
-    Sukoi = presets.create_Sukoi57(starting_position, starting_velocity, manual_control=True)
-    Patriot1 = presets.create_PAC3(
-        starting_position=np.array([9000.0, 10.0, 5000.0]),
-        starting_velocity=np.array([0.0, 10.0, 0.0]),
-        target_entity=Sukoi
-    )
-    Patriot2 = presets.create_PAC3(
-        starting_position=np.array([9000.0, 10.0, 0.0]),
-        starting_velocity=np.array([0.0, 10.0, 0.0]),
-        target_entity=Sukoi
-    )
-    Patriot3 = presets.create_PAC3(
-        starting_position=np.array([9000.0, 10.0, -5000.0]),
-        starting_velocity=np.array([0.0, 10.0, 0.0]),
-        target_entity=Sukoi
-    )
-    return [Sukoi, Patriot1, Patriot2, Patriot3]
+import numpy as np
 
-def run(epochs: int = 1, sprint: bool = False):
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+import viz
+from res.presets import sim_presets
+
+SIMULATION_DURATION: float = 40.0
+SIMULATION_TICKRATE: float = 60.0
+SIMULATION_SPEED: float = 1.0
+SIMULATION_BOX_SIZE = np.array([40000.0, 10000.0, 40000.0], dtype=float)
+SIMULATION_RESOLUTION = np.array([1500, 500], dtype=int)
+
+
+def run(epochs: int = 1, sprint: bool = False) -> None:
     epoch = 0
     while epochs <= 0 or epoch < epochs:
-        entities = setup_entities()
+        entities = sim_presets.create_phase1_scenario()
         run_epoch(entities, SIMULATION_DURATION, SIMULATION_TICKRATE, SIMULATION_SPEED, sprint)
-        clean_viz()
         epoch += 1
 
-def run_epoch(entities, duration_s: float, tick_rate: float, sim_speed: float, sprint: bool):
-    dt_sim = 1.0 / tick_rate
-    dt_real_target = dt_sim / sim_speed
-    steps = int(duration_s * tick_rate)
 
+def run_epoch(entities: List[Any], duration_s: float, tick_rate: float, sim_speed: float, sprint: bool) -> None:
+    dl.initialize_deeplearning()
+    dt_sim = 1.0 / float(tick_rate)
+    dt_real_target = dt_sim / float(sim_speed)
+    steps = int(float(duration_s) * float(tick_rate))
+    jet_obj = next((e for e in entities if e.__class__.__name__.lower() == "jet"), None)
+
+    print("=== Running epoch ===")
     next_tick = time.perf_counter()
     for _ in range(steps):
         for ent in entities:
+            if not bool(getattr(ent, "alive", True)):
+                continue
+            ent.think(entities)
             ent.tick()
-        update_instances(entities)
+
+        if not sprint:
+            viz.update_instances(entities)
+
+        if jet_obj is not None and not bool(getattr(jet_obj, "alive", True)):
+            break
 
         if not sprint:
             next_tick += dt_real_target
             sleep_for = next_tick - time.perf_counter()
-            if sleep_for > 0:
+            if sleep_for > 0.0:
                 time.sleep(sleep_for)
+
+    dl.cleanup_deeplearning()

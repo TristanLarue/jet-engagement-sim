@@ -82,11 +82,13 @@ def get_sideslip(velocity: np.ndarray, R: np.ndarray) -> float:
     return np.degrees(np.arctan2(v_body[2], v_body[0])) #Angle between forward and "right" axis
 
 def get_lift_coefficient(aoa: float, max_lift_coefficient: float, optimal_lift_aoa: float,zero_lift_aoa: float) -> float:
-    a = ((aoa + 180.0) % 360.0) - 180.0
-    if a > 90.0:
-        a -= 180.0
-    elif a < -90.0:
-        a += 180.0
+    '''Returns a simplified lift coefficient based on angle of attack'''
+    '''Mimics a typical lift curve with stall characteristics'''
+    angle = ((aoa + 180.0) % 360.0) - 180.0
+    if angle > 90.0:
+        angle -= 180.0
+    elif angle < -90.0:
+        angle += 180.0
     stall_pos = float(optimal_lift_aoa)
     stall_neg = -stall_pos
     cl_max = float(max_lift_coefficient)
@@ -95,13 +97,12 @@ def get_lift_coefficient(aoa: float, max_lift_coefficient: float, optimal_lift_a
     denom = (stall_pos - zero_lift_aoa)
     slope = (cl_max / denom) if abs(denom) > 1e-12 else 0.0
 
-    if stall_neg <= a <= stall_pos:
-        return max(cl_min, min(cl_max, slope * (a - zero_lift_aoa)))
+    if stall_neg <= angle <= stall_pos:
+        return max(cl_min, min(cl_max, slope * (angle - zero_lift_aoa)))
 
-    if a > stall_pos:
-        return (cl_max - 0.016 * (a - stall_pos) ** 2) if a <= (stall_pos + 5.0) else max(0.0, 0.8 * cl_max * (1.0 - (a - (stall_pos + 5.0)) / 70.0))
-
-    return (cl_min + 0.01 * (a - stall_neg) ** 2) if a >= (stall_neg - 5.0) else min(0.0, -0.65 * abs(cl_min) * (1.0 - (abs(a) - abs(stall_neg - 5.0)) / 70.0))
+    if angle > stall_pos:
+        return (cl_max - 0.016 * (angle - stall_pos) ** 2) if angle <= (stall_pos + 5.0) else max(0.0, 0.8 * cl_max * (1.0 - (angle - (stall_pos + 5.0)) / 70.0))
+    return (cl_min + 0.01 * (angle - stall_neg) ** 2) if angle >= (stall_neg - 5.0) else min(0.0, -0.65 * abs(cl_min) * (1.0 - (abs(angle) - abs(stall_neg - 5.0)) / 70.0))
 
 def get_drag_coefficient(aoa: float, min_drag_coefficient: float, max_drag_coefficient: float) -> float:
     range_cd = (max_drag_coefficient - min_drag_coefficient)
