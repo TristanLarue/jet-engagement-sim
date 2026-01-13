@@ -1,13 +1,13 @@
 # Missile-Jet Engagement Simulation
-[ALL RIGHTS RESERVED]
 
 This project is a 3D physics simulation of aerial combat between a fighter jet and guided missiles. The simulation implements six-degree-of-freedom rigid body dynamics with aerodynamic forces, control surfaces, and torque-based rotations. It runs at 60Hz and supports both real-time visualization and training modes.
 
 ## Overview
-
-The simulation models engagements between a Sukhoi Su-57 fighter jet and PAC-3 Patriot missiles. Both entities are subject to physical forces including gravity, thrust, drag, lift, and control surface forces. Each entity updates its state through a tick-based physics loop that accumulates forces, computes torques, and integrates motion using explicit Euler integration.
-
 The visualization displays two screens: the left shows the 3D spatial positions and trajectories of entities, while the right shows a force visualization diagram with the jet's orientation vectors and real-time physical data.
+
+
+https://github.com/user-attachments/assets/a8531ad1-7871-4ecb-9dbd-8d6ec5cdf8e4
+
 
 ## Core Components
 
