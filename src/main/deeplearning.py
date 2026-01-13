@@ -26,7 +26,6 @@ _ROOT=Path(__file__).resolve().parents[2]
 _DIR=_ROOT/'res'/'models'/'jet_ai'
 _MODEL=_DIR/'jet_ai'
 _LOG=_DIR/'train.log'
-_MIRR=(Path(__file__).resolve().parent/'jet_ai', _ROOT/'jet_ai')
 
 _actor=_q1=_q2=_q1t=_q2t=None
 _ao=_q1o=_q2o=_alo=None
@@ -241,13 +240,6 @@ def _log_line(s):
             f.write(s+'\n')
     except Exception:
         pass
-    for m in _MIRR:
-        try:
-            m.mkdir(parents=True,exist_ok=True)
-            with open(m/'train.log','a',encoding='utf-8') as f:
-                f.write(s+'\n')
-        except Exception:
-            pass
 
 
 def _save():
