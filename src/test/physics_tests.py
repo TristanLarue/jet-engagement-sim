@@ -202,7 +202,7 @@ def test_get_lift_force_uses_body_up_axis() -> None:
 @pytest.mark.parametrize(
     "fn_name",
     [
-        "get_fuselage_lift_force",
+        "get_lift_force",
         "get_sideforce_force",
         "get_elevator_force",
         "get_aileron_force",

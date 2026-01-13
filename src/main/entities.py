@@ -36,6 +36,7 @@ class jet(entity):
         self.wingspan = wingspan
         self.length = length
         self.thrust_force = thrust_force
+        self.current_reward = 0.0
 
     def think(self,entities):
         
@@ -49,20 +50,23 @@ class jet(entity):
     def tick(self):
         air_density = physics.get_air_density(self.position[1])
         aoa = physics.get_angle_of_attack(self.velocity, self.orientation)
-        print((aoa))
+        sideslip = physics.get_sideslip(self.velocity, self.orientation)
         cd = physics.get_drag_coefficient(aoa, self.min_drag_coefficient, self.max_drag_coefficient)
         cl = physics.get_lift_coefficient(aoa, self.max_lift_coefficient, self.optimal_lift_aoa,-2.0)
+        side_cl = physics.get_lift_coefficient(sideslip, self.max_lift_coefficient, self.optimal_lift_aoa, 0.0)
+        side_surface_area = self.reference_area * 0.1  # Approximate area of vertical stabilizer
+        control_surface_area = self.reference_area * 0.8  # Approximate area of control surfaces
         # Collect all force/torque pairs
         forces = [
             [physics.get_gravity_force(self.mass), np.array([0.0, 0.0, 0.0])],
             [physics.get_thrust_force(self.orientation, self.throttle, self.thrust_force, self.length), np.array([-0.5 * self.length, 0.0, 0.0])],
             [physics.get_drag_force(self.velocity, air_density, self.reference_area, cd), np.array([-0.2 * self.length, 0.0, 0.0])],
-            [physics.get_fuselage_lift_force(self.velocity, self.reference_area, self.orientation, air_density, cl), np.array([-0.2 * self.length, 0.0, 0.0])],
-            [physics.get_sideforce_force(self.velocity, air_density, self.reference_area, self.max_lift_coefficient, self.orientation),np.array([-0.45 * self.length, 0.0, 0.0])],
-            [physics.get_elevator_force(self.velocity, air_density, self.reference_area, self.max_lift_coefficient, self.orientation, self.control_inputs["pitch"], self.optimal_lift_aoa, 0.30, 1.40), np.array([-0.45 * self.length, 0.0, 0.0])],
-            [physics.get_aileron_force(self.velocity, air_density, self.reference_area, self.max_lift_coefficient, self.orientation, self.control_inputs["roll"], self.optimal_lift_aoa, 0.04, 0.6)[0], np.array([-0.05 * self.length, 0.0, 0.50 * self.wingspan])],
-            [physics.get_aileron_force(self.velocity, air_density, self.reference_area, self.max_lift_coefficient, self.orientation, self.control_inputs["roll"], self.optimal_lift_aoa, 0.04, 0.6)[1], np.array([-0.05 * self.length, 0.0, -0.50 * self.wingspan])],
-            [physics.get_rudder_force(self.velocity, air_density, self.reference_area, self.max_lift_coefficient, self.orientation, self.control_inputs["yaw"], self.optimal_lift_aoa, 0.03, 0.30), np.array([-0.45 * self.length, 0.0, 0.0])],
+            [physics.get_lift_force(self.velocity, self.reference_area, cl, self.orientation, air_density), np.array([-0.2 * self.length, 0.0, 0.0])],
+            [physics.get_sideforce_force(self.velocity, side_surface_area, side_cl, self.orientation, air_density),np.array([-0.45 * self.length, 0.0, 0.0])],
+            [physics.get_elevator_force(self.velocity, air_density, control_surface_area, self.max_lift_coefficient, self.orientation, self.control_inputs["pitch"], self.optimal_lift_aoa, 0.30, 1.40), np.array([-0.45 * self.length, 0.0, 0.0])],
+            [physics.get_aileron_force(self.velocity, air_density, control_surface_area, self.max_lift_coefficient, self.orientation, self.control_inputs["roll"], self.optimal_lift_aoa, 0.04, 0.6), np.array([-0.05 * self.length, 0.0, 0.50 * self.wingspan])],
+            [-physics.get_aileron_force(self.velocity, air_density, control_surface_area, self.max_lift_coefficient, self.orientation, self.control_inputs["roll"], self.optimal_lift_aoa, 0.04, 0.6), np.array([-0.05 * self.length, 0.0, -0.50 * self.wingspan])],
+            [physics.get_rudder_force(self.velocity, air_density, control_surface_area, self.max_lift_coefficient, self.orientation, self.control_inputs["yaw"], self.optimal_lift_aoa, 0.03, 0.30), np.array([-0.45 * self.length, 0.0, 0.0])],
         ]
         # Filter out None values
         total_force = np.array([0.0, 0.0, 0.0])
@@ -73,7 +77,7 @@ class jet(entity):
         
         # Update state
         self.omega += total_torque / SIMULATION_TICKRATE
-        self.omega *= 0.95  # GOOD ENOUGH DAMPING FOR RELEASE
+        self.omega *= 0.95  # GOOD ENOUGH DAMPING FOR RELEASE, MAYBE TUNE LATER
         self.orientation = physics.integrate_orientation(self.orientation, self.omega, 1.0 / SIMULATION_TICKRATE)
         acceleration = total_force / self.mass
         self.velocity = physics.integrate_velocity(self.velocity, acceleration, 1.0 / SIMULATION_TICKRATE)
@@ -90,6 +94,7 @@ class missile(entity):
         self.chase_strategy = chase_strategy
         self.length = length
         self.control_inputs = {'pitch': 0.0, 'yaw': 0.0}
+        self.explosion_radius = 30.0  # meters
 
     def think(self,entities):
         self.chase_strategy(self)
@@ -111,7 +116,7 @@ class missile(entity):
             [physics.get_gravity_force(self.mass), np.array([0.0, 0.0, 0.0])],
             [physics.get_thrust_force(self.orientation, 1, self.thrust_force, self.length), np.array([-0.5 * self.length, 0.0, 0.0])],
             [physics.get_drag_force(self.velocity, air_density, self.reference_area, cd), np.array([-0.2 * self.length, 0.0, 0.0])],
-            [physics.get_fuselage_lift_force(self.velocity, self.reference_area, self.orientation, air_density, cl), np.array([-0.2 * self.length, 0.0, 0.0])],
+            [physics.get_lift_force(self.velocity, self.reference_area, cl, self.orientation, air_density), np.array([-0.2 * self.length, 0.0, 0.0])],
             [physics.get_elevator_force(self.velocity, air_density, self.reference_area, self.max_lift_coefficient, self.orientation, self.control_inputs["pitch"], self.optimal_lift_aoa, 0.5, 1.0), np.array([-0.45 * self.length, 0.0, 0.0])],
             [physics.get_rudder_force(self.velocity, air_density, self.reference_area, self.max_lift_coefficient, self.orientation, self.control_inputs["yaw"], self.optimal_lift_aoa, 0.5, 1.0), np.array([-0.45 * self.length, 0.0, 0.0])],
         ]
@@ -130,3 +135,6 @@ class missile(entity):
         self.position = physics.integrate_position(self.position, self.velocity, 1.0 / SIMULATION_TICKRATE)
         if self.position[1] < 0.0:
             self.alive = False
+        if physics.get_distance(self.position,self.target_entity.position) < self.explosion_radius:
+            self.alive = False
+            self.target_entity.alive = False

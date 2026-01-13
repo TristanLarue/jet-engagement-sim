@@ -41,6 +41,7 @@ _forces_status: Any | None = None
 _main_info: Any | None = None
 _jet_static: Any | None = None
 _jet_dynamic: Any | None = None
+_reward_display: Any | None = None
 _forces_jet_display: Any | None = None  # Jet object in forces canvas
 
 # Force arrows for visualization
@@ -219,6 +220,7 @@ def _dynamic_text(entity: Any = None) -> str:
             "Speed |V|: N/A\n"
             "Omega |ω|: N/A\n"
             "AoA: N/A\n"
+            "Sideslip: N/A\n"
             "Cd: N/A\n"
             "Cl: N/A\n"
             "Closest missile dist: N/A\n"
@@ -239,18 +241,23 @@ def _dynamic_text(entity: Any = None) -> str:
     if vel is not None:
         bearing = float(np.degrees(np.arctan2(vel[0], vel[2])))
     
-    # Calculate angle of attack, Cd, and Cl using physics functions
+    # Calculate angle of attack, sideslip, Cd, and Cl using physics functions
     aoa = None
+    sideslip = None
     cd = None
     cl = None
+    cl_side = None
     air_density = None
     if hasattr(entity, 'orientation') and vel is not None:
         try:
             import physics
             aoa_raw = physics.get_angle_of_attack(vel, entity.orientation)
             aoa = float(aoa_raw)  # Try without conversion first
+            sideslip_raw = physics.get_sideslip(vel, entity.orientation)
+            sideslip = float(sideslip_raw)
             cd = physics.get_drag_coefficient(aoa, entity.min_drag_coefficient, entity.max_drag_coefficient)
             cl = physics.get_lift_coefficient(aoa, entity.max_lift_coefficient, entity.optimal_lift_aoa, -2.0)
+            cl_side = physics.get_lift_coefficient(sideslip, entity.max_lift_coefficient, entity.optimal_lift_aoa, 0.0)
             if altitude is not None:
                 air_density = physics.get_air_density(altitude)
         except Exception:
@@ -263,8 +270,10 @@ def _dynamic_text(entity: Any = None) -> str:
     speed_str = f"{speed:.1f} m/s" if speed is not None else "N/A"
     omega_str = f"{omega_mag:.3f} rad/s" if omega_mag is not None else "N/A"
     aoa_str = f"{aoa:.1f}°" if aoa is not None else "N/A"
+    sideslip_str = f"{sideslip:.1f}°" if sideslip is not None else "N/A"
     cd_str = f"{cd:.3f}" if cd is not None else "N/A"
     cl_str = f"{cl:.3f}" if cl is not None else "N/A"
+    cl_side_str = f"{cl_side:.3f}" if cl_side is not None else "N/A"
     
     return (
         "Live Data\n"
@@ -274,8 +283,10 @@ def _dynamic_text(entity: Any = None) -> str:
         f"Speed |V|: {speed_str}\n"
         f"Omega |ω|: {omega_str}\n"
         f"AoA: {aoa_str}\n"
+        f"Sideslip: {sideslip_str}\n"
         f"Cd: {cd_str}\n"
         f"Cl: {cl_str}\n"
+        f"Cl_side: {cl_side_str}\n"
         "Closest missile dist: N/A\n"
         "Status: Active"
     )
@@ -339,7 +350,7 @@ def _place_hud() -> None:
 
 def initialize_viz(sim_config: Optional[Dict[str, Any]] = None) -> None:
     global _main_canvas, _forces_canvas, _canvases_created
-    global _main_status, _forces_status, _main_info, _jet_static, _jet_dynamic
+    global _main_status, _forces_status, _main_info, _jet_static, _jet_dynamic, _reward_display
     global _sim_config
 
     if isinstance(sim_config, dict):
@@ -392,7 +403,31 @@ def initialize_viz(sim_config: Optional[Dict[str, Any]] = None) -> None:
     assert _forces_canvas is not None
 
     _main_canvas.select()
-    _static_objects.append(vp.box(canvas=_main_canvas, pos=vp.vector(0, 0, 0), size=vp.vector(14000, 1, 14000), color=vp.color.gray(0.12)))
+    
+    # Import simulation to get box size
+    import simulation
+    box_size = simulation.SIMULATION_BOX_SIZE
+    ground_size_x = float(box_size[0] * 2)  # Full width of simulation box
+    ground_size_z = float(box_size[2] * 2)  # Full depth of simulation box
+    
+    _static_objects.append(vp.box(canvas=_main_canvas, pos=vp.vector(0, 0, 0), size=vp.vector(ground_size_x, 1, ground_size_z), color=vp.color.gray(0.12)))
+    
+    # Add simulation boundary box lines
+    half_x = float(box_size[0])
+    half_y = float(box_size[1])
+    half_z = float(box_size[2])
+    
+    # Bottom rectangle
+    _static_objects.append(vp.curve(canvas=_main_canvas, pos=[vp.vector(-half_x, 0, -half_z), vp.vector(half_x, 0, -half_z), vp.vector(half_x, 0, half_z), vp.vector(-half_x, 0, half_z), vp.vector(-half_x, 0, -half_z)], color=vp.color.white, radius=10))
+    
+    # Top rectangle
+    _static_objects.append(vp.curve(canvas=_main_canvas, pos=[vp.vector(-half_x, half_y*2, -half_z), vp.vector(half_x, half_y*2, -half_z), vp.vector(half_x, half_y*2, half_z), vp.vector(-half_x, half_y*2, half_z), vp.vector(-half_x, half_y*2, -half_z)], color=vp.color.white, radius=10))
+    
+    # Vertical edges
+    _static_objects.append(vp.curve(canvas=_main_canvas, pos=[vp.vector(-half_x, 0, -half_z), vp.vector(-half_x, half_y*2, -half_z)], color=vp.color.white, radius=10))
+    _static_objects.append(vp.curve(canvas=_main_canvas, pos=[vp.vector(half_x, 0, -half_z), vp.vector(half_x, half_y*2, -half_z)], color=vp.color.white, radius=10))
+    _static_objects.append(vp.curve(canvas=_main_canvas, pos=[vp.vector(half_x, 0, half_z), vp.vector(half_x, half_y*2, half_z)], color=vp.color.white, radius=10))
+    _static_objects.append(vp.curve(canvas=_main_canvas, pos=[vp.vector(-half_x, 0, half_z), vp.vector(-half_x, half_y*2, half_z)], color=vp.color.white, radius=10))
 
     _forces_canvas.select()
     _force_objects.append(vp.arrow(canvas=_forces_canvas, pos=vp.vector(0, 0, 0), axis=vp.vector(400, 0, 0), shaftwidth=8.0, color=vp.color.white))    # X axis - white
@@ -411,10 +446,10 @@ def initialize_viz(sim_config: Optional[Dict[str, Any]] = None) -> None:
     # Create force arrows with different colors and amplifiers
     force_config = {
         "gravity": {"color": vp.color.purple, "amplifier": 0.8},
-        "thrust": {"color": vp.color.orange, "amplifier": 1.8},
+        "thrust": {"color": vp.color.orange, "amplifier": 1.5},
         "drag": {"color": vp.color.red, "amplifier": 1.33},
         "lift": {"color": vp.color.cyan, "amplifier": 0.13},
-        "sideforce": {"color": vp.color.magenta, "amplifier": 0.5},
+        "sideforce": {"color": vp.color.magenta, "amplifier": 3.0},
         "elevator": {"color": vp.color.yellow, "amplifier": 0.27},
         "aileron_left": {"color": vp.color.green, "amplifier": 0.5},
         "aileron_right": {"color": vp.color.blue, "amplifier": 0.5},
@@ -447,6 +482,7 @@ def initialize_viz(sim_config: Optional[Dict[str, Any]] = None) -> None:
 
     _main_status = _make_box_label(_main_canvas, "MAIN SIMULATION\nEntities: N/A\nTick: N/A", vp.vector(_main_canvas.width / 2, _main_canvas.height - 22, 0), align="center")
     _forces_status = _make_box_label(_forces_canvas, "JET FORCES VIEW\nTelemetry: N/A\nForces: N/A", vp.vector(_forces_canvas.width / 2, _forces_canvas.height - 22, 0), align="center")
+    _reward_display = _make_box_label(_main_canvas, "AI Current Reward:\n0.0", vp.vector(_main_canvas.width - 150, 80, 0), align="right")
 
     _main_info = _make_box_label(_main_canvas, _fmt_sim_info(), vp.vector(12, _main_canvas.height - 24, 0), height=16, align="left")
 
@@ -465,7 +501,7 @@ def _iter_objects(obj: Any) -> Sequence[Any]:
 
 
 def cleanup_viz() -> None:
-    global _tick, _main_status, _forces_status, _main_info, _jet_static, _jet_dynamic, _last_jet_instance, _forces_jet_display, _force_arrows
+    global _tick, _main_status, _forces_status, _main_info, _jet_static, _jet_dynamic, _reward_display, _last_jet_instance, _forces_jet_display, _force_arrows
 
     for ev in list(_entity_visuals.values()):
         for obj in _iter_objects(ev.body):
@@ -493,7 +529,7 @@ def cleanup_viz() -> None:
     _static_objects.clear()
     _force_objects.clear()
 
-    for lbl in [_main_status, _forces_status, _main_info, _jet_static, _jet_dynamic]:
+    for lbl in [_main_status, _forces_status, _main_info, _jet_static, _jet_dynamic, _reward_display]:
         if lbl is None:
             continue
         try:
@@ -506,6 +542,7 @@ def cleanup_viz() -> None:
     _main_info = None
     _jet_static = None
     _jet_dynamic = None
+    _reward_display = None
     _last_jet_instance = None
     _forces_jet_display = None
     _force_arrows = {}
@@ -698,8 +735,11 @@ def _update_force_arrows(entity: Any) -> None:
         # Calculate all forces (similar to entity's tick method)
         air_density = physics.get_air_density(entity.position[1])
         aoa = physics.get_angle_of_attack(entity.velocity, entity.orientation)
+        sideslip = physics.get_sideslip(entity.velocity, entity.orientation)
         cd = physics.get_drag_coefficient(aoa, entity.min_drag_coefficient, entity.max_drag_coefficient)
         cl = physics.get_lift_coefficient(aoa, entity.max_lift_coefficient, entity.optimal_lift_aoa, -2.0)
+        side_cl = physics.get_lift_coefficient(sideslip, entity.max_lift_coefficient, entity.optimal_lift_aoa, 0.0)
+        side_surface_area = entity.reference_area * 0.1  # Approximate area of vertical stabilizer
         
         # Calculate forces in world frame, then convert to body frame for display
         R_inv = entity.orientation.T  # Transpose for world->body conversion
@@ -711,39 +751,39 @@ def _update_force_arrows(entity: Any) -> None:
             },
             "thrust": {
                 "force": physics.get_thrust_force(entity.orientation, entity.throttle, entity.thrust_force, entity.length),
-                "offset": np.array([-10.0 * entity.length, 0.0, 0.0])
+                "offset": np.array([-12.0 * entity.length, 0.0, 0.0])
             },
             "drag": {
                 "force": physics.get_drag_force(entity.velocity, air_density, entity.reference_area, cd),
-                "offset": np.array([-4.0 * entity.length, 0.0, 0.0])
+                "offset": np.array([-4.8 * entity.length, 0.0, 0.0])
             },
             "lift": {
-                "force": physics.get_fuselage_lift_force(entity.velocity, entity.reference_area, entity.orientation, air_density, cl),
-                "offset": np.array([-4.0 * entity.length, 0.0, 0.0])
+                "force": physics.get_lift_force(entity.velocity, entity.reference_area, cl, entity.orientation, air_density),
+                "offset": np.array([-4.8 * entity.length, 0.0, 0.0])
             },
             "sideforce": {
-                "force": physics.get_sideforce_force(entity.velocity, air_density, entity.reference_area, entity.max_lift_coefficient, entity.orientation),
-                "offset": np.array([-9.0 * entity.length, 0.0, 0.0])
+                "force": physics.get_sideforce_force(entity.velocity, side_surface_area, side_cl, entity.orientation, air_density),
+                "offset": np.array([-10.8 * entity.length, 0.0, 0.0])
             },
             "elevator": {
                 "force": physics.get_elevator_force(entity.velocity, air_density, entity.reference_area, entity.max_lift_coefficient, entity.orientation, entity.control_inputs["pitch"], entity.optimal_lift_aoa, 0.30, 1.40),
-                "offset": np.array([-9.0 * entity.length, 0.0, 0.0])
+                "offset": np.array([-10.8 * entity.length, 0.0, 0.0])
             },
             "rudder": {
                 "force": physics.get_rudder_force(entity.velocity, air_density, entity.reference_area, entity.max_lift_coefficient, entity.orientation, entity.control_inputs["yaw"], entity.optimal_lift_aoa, 0.03, 0.30),
-                "offset": np.array([-9.0 * entity.length, 0.0, 0.0])
+                "offset": np.array([-10.8 * entity.length, 0.0, 0.0])
             }
         }
         
-        # Handle aileron forces (returns tuple)
-        aileron_forces = physics.get_aileron_force(entity.velocity, air_density, entity.reference_area, entity.max_lift_coefficient, entity.orientation, entity.control_inputs["roll"], entity.optimal_lift_aoa, 0.04, 0.6)
+        # Handle aileron forces (returns single force, opposite aileron is negated)
+        aileron_force = physics.get_aileron_force(entity.velocity, air_density, entity.reference_area, entity.max_lift_coefficient, entity.orientation, entity.control_inputs["roll"], entity.optimal_lift_aoa, 0.04, 0.6)
         forces_data["aileron_left"] = {
-            "force": aileron_forces[0],
-            "offset": np.array([-1.0 * entity.length, 0.0, 10.0 * entity.wingspan])
+            "force": aileron_force,
+            "offset": np.array([-1.2 * entity.length, 0.0, 12.0 * entity.wingspan])
         }
         forces_data["aileron_right"] = {
-            "force": aileron_forces[1], 
-            "offset": np.array([-1.0 * entity.length, 0.0, -10.0 * entity.wingspan])
+            "force": -aileron_force, 
+            "offset": np.array([-1.2 * entity.length, 0.0, -12.0 * entity.wingspan])
         }
         
         # Update each force arrow
@@ -922,6 +962,15 @@ def update_instances(entities: Sequence[Any]) -> None:
 
     if _main_info is not None:
         _main_info.text = _fmt_sim_info()
+
+    # Update reward display
+    if _reward_display is not None:
+        current_reward = 0.0
+        for ent in entities:
+            if hasattr(ent, 'current_reward'):
+                current_reward = float(getattr(ent, 'current_reward', 0.0))
+                break
+        _reward_display.text = f"AI Current Reward:\n{current_reward:.3f}"
 
     _place_hud()
 

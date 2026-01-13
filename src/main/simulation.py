@@ -1,14 +1,19 @@
-from __future__ import annotations
-
-import deeplearning as dl
 import sys
 import os
+import warnings
+
+# Suppress warnings before any heavy imports
+warnings.filterwarnings("ignore")
+
+import deeplearning as dl
 import time
 from typing import Any, List
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+# Add project root to Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, project_root)
 
 import viz
 from res.presets import sim_presets
@@ -23,12 +28,19 @@ SIMULATION_RESOLUTION = np.array([1500, 500], dtype=int)
 def run(epochs: int = 1, sprint: bool = False) -> None:
     epoch = 0
     while epochs <= 0 or epoch < epochs:
-        entities = sim_presets.create_phase1_scenario()
+        phase = int(getattr(dl, "REWARD_PHASE", getattr(dl, "PHASE", 1)))
+        entities = sim_presets.create_scenario(phase)
         run_epoch(entities, SIMULATION_DURATION, SIMULATION_TICKRATE, SIMULATION_SPEED, sprint)
         epoch += 1
 
 
-def run_epoch(entities: List[Any], duration_s: float, tick_rate: float, sim_speed: float, sprint: bool) -> None:
+def run_epoch(
+    entities: List[Any],
+    duration_s: float,
+    tick_rate: float,
+    sim_speed: float,
+    sprint: bool,
+) -> None:
     dl.initialize_deeplearning()
     dt_sim = 1.0 / float(tick_rate)
     dt_real_target = dt_sim / float(sim_speed)
@@ -47,7 +59,12 @@ def run_epoch(entities: List[Any], duration_s: float, tick_rate: float, sim_spee
         if not sprint:
             viz.update_instances(entities)
 
+        # MOD: flush final transition when physics kills the jet during tick()
         if jet_obj is not None and not bool(getattr(jet_obj, "alive", True)):
+            try:
+                dl.jet_ai_step(entities, jet_obj)
+            except Exception:
+                pass
             break
 
         if not sprint:

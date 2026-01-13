@@ -1,4 +1,8 @@
 numpy>=1.26.0
-vpython>=7.6.4
 tensorflow>=2.15.0
-keras>=2.15.0
+keras>=3.0.0
+vpython>=7.6.4
+matplotlib>=3.8.0
+trimesh>=4.0.0
+pytest>=7.4.0
+

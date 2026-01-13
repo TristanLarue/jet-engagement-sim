@@ -40,7 +40,7 @@ def create_PAC3(starting_position=np.zeros(3), starting_velocity=np.zeros(3), ch
         max_g=35.0,
         reference_area=0.051,
         min_drag_coefficient=0.08,
-        max_drag_coefficient=1.20,
+        max_drag_coefficient=10.0, #1.2 in normal condition
         max_lift_coefficient=1.8,
         moment_of_inertia_roll=2.54,
         moment_of_inertia_pitch=704.0,
