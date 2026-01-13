@@ -1,121 +1,99 @@
 # Missile-Jet Engagement Simulation
 [ALL RIGHTS RESERVED]
 
-This project is a high-fidelity 3D physics simulation of aerial combat scenarios, modeling the dynamic interaction between guided missiles and maneuvering fighter jets. The simulation implements six-degree-of-freedom (6-DOF) rigid body dynamics with accurate aerodynamic modeling, control surface physics, and real-time engagement scenarios.
+This project is a 3D physics simulation of aerial combat between a fighter jet and guided missiles. The simulation implements six-degree-of-freedom rigid body dynamics with aerodynamic forces, control surfaces, and torque-based rotations. It runs at 60Hz and supports both real-time visualization and training modes.
 
 ## Overview
 
-The simulation environment models realistic aerial engagements between a Sukhoi Su-57 fighter jet and PAC-3 Patriot missiles. Each entity operates under complete physical constraints including atmospheric effects, thrust dynamics, drag forces, lift generation, and control surface responses. The simulation runs at 60Hz and supports both real-time visualization and accelerated training modes.
+The simulation models engagements between a Sukhoi Su-57 fighter jet and PAC-3 Patriot missiles. Both entities are subject to physical forces including gravity, thrust, drag, lift, and control surface forces. Each entity updates its state through a tick-based physics loop that accumulates forces, computes torques, and integrates motion using explicit Euler integration.
 
-When running the simulation, users observe two primary displays: the left screen shows the 3D spatial visualization of the engagement with entity positions and trajectories, while the right screen presents a real-time force visualization diagram showing the jet's orientation, velocity vectors, and physical state data including altitude, speed, angle of attack, and G-forces.
+The visualization displays two screens: the left shows the 3D spatial positions and trajectories of entities, while the right shows a force visualization diagram with the jet's orientation vectors and real-time physical data.
 
-## Architecture
-
-### Core Simulation Components
+## Core Components
 
 **Physics Engine** ([physics.py](src/main/physics.py))  
-The physics module implements fundamental aerodynamic calculations and state integration. Key systems include:
-- Atmospheric density modeling using barometric formulas for altitude-dependent air density
-- Angle of attack and sideslip calculations in body-frame coordinates
-- Lift and drag coefficient curves with stall characteristics for symmetrical airfoils
-- Control surface force generation (elevators, ailerons, rudders) with effectiveness degradation at high angles of attack
-- Quaternion-based orientation integration using rotation matrices with SVD re-orthonormalization
-- Force-to-torque conversion accounting for moment arms and moments of inertia
+Implements aerodynamic calculations and numerical integration:
+- Air density calculation using a barometric formula with temperature lapse rate
+- Angle of attack and sideslip angle computation in body-frame coordinates
+- Lift coefficient curve with linear region and post-stall cubic falloff
+- Drag coefficient as quadratic function of angle of attack
+- Dynamic pressure calculation for control surface forces
+- Control effectiveness that degrades linearly beyond optimal angle of attack
+- Rodrigues rotation formula for orientation updates from angular velocity
+- SVD re-orthonormalization to maintain rotation matrix validity
 
 **Entity System** ([entities.py](src/main/entities.py))  
-The entity architecture defines two primary classes inheriting from a base entity:
+Two entity classes inherit from a base entity that stores position, velocity, orientation, angular velocity, mass, aerodynamic coefficients, and moment of inertia.
 
-*Jet Class*  
-Models a fighter aircraft with:
-- Thrust vectoring through throttle control (0-284kN for Su-57)
-- Three-axis control inputs (pitch, roll, yaw) mapped to control surface deflections
-- Composite force accumulation from gravity, thrust, drag, lift, sideforce, and control surfaces
-- Angular velocity damping and torque-based rotation dynamics
-- Ground collision detection
+*Jet*  
+- Stores control inputs (pitch, roll, yaw) and throttle
+- Calls deep learning module to set control inputs each tick
+- Accumulates nine forces with application points: gravity, thrust, drag, lift, sideforce, elevator, two ailerons, and rudder
+- Applies 0.95 damping factor to angular velocity
+- Dies if altitude drops below zero
 
-*Missile Class*  
-Models a guided interceptor with:
-- Constant maximum thrust propulsion
-- Simplified two-axis guidance (pitch and yaw control)
-- Roll stabilization aligned with velocity vector
-- Proximity detonation logic with configurable explosion radius
-- Target tracking through guidance strategy callbacks
-
-Both entities compute their next state through a tick-based update cycle, accumulating forces and torques before integrating accelerations into velocity and position using explicit Euler integration.
+*Missile*  
+- Stores target entity reference and guidance strategy function
+- Calls guidance strategy each tick to update orientation
+- Uses simplified roll alignment that sets roll to match velocity direction
+- Accumulates six forces: gravity, thrust, drag, lift, elevator, and rudder
+- Applies 0.9 damping factor to angular velocity
+- Proximity detonation at 30 meter radius kills both missile and target
 
 **Simulation Controller** ([simulation.py](src/main/simulation.py))  
-Manages the execution environment:
-- Fixed timestep simulation at 60Hz with configurable real-time pacing
-- Entity lifecycle management (spawning, state updates, destruction)
-- Integration with visualization and machine learning systems
-- Multi-epoch training support with scenario generation
-- Graceful termination on entity destruction or timeout
+- Runs at 60Hz with 40 second maximum duration per epoch
+- Each tick calls `think()` then `tick()` on all alive entities
+- In non-sprint mode, sleeps to maintain real-time pacing and updates visualization
+- Terminates early if jet dies during physics update
+- Supports multi-epoch training with scenario phase progression
 
-**Guidance Systems** ([guidance.py](src/main/guidance.py))  
-Contains missile guidance algorithms. Currently implements direct attack guidance where the missile continuously reorients toward the target position. The modular structure allows for implementation of advanced guidance laws such as proportional navigation or predictive intercept algorithms.
+**Guidance** ([guidance.py](src/main/guidance.py))  
+Contains `missile_direct_attack_DEBUG()` which constructs a rotation matrix that orients the missile's forward axis toward the target position. This directly sets the missile orientation without using control surfaces.
 
-**Scenario Presets** ([sim_presets.py](res/presets/sim_presets.py), [ent_presets.py](res/presets/ent_presets.py))  
-Defines five progressive difficulty phases for training:
-- **Phase 1**: Single jet with moderate speed and minimal angular velocity
-- **Phase 2**: Jet with increased speed range and rotational dynamics
-- **Phase 3**: Jet at high altitude with one missile threat
-- **Phase 4**: Two-missile engagement scenario
-- **Phase 5**: Three-missile engagement with maximum difficulty parameters
+**Scenario Generation** ([sim_presets.py](res/presets/sim_presets.py), [ent_presets.py](res/presets/ent_presets.py))  
+Five difficulty phases with randomized initial conditions:
+- **Phase 1**: Single jet, moderate speed (260-360 m/s), minimal rotation
+- **Phase 2**: Single jet, wider speed range (220-480 m/s), initial angular velocity up to 20 deg/s
+- **Phase 3**: Jet with one missile spawned 12-20 km behind
+- **Phase 4**: Jet with two missiles
+- **Phase 5**: Jet with three missiles
 
-Entity presets contain realistic physical specifications including mass, reference areas, moment of inertia tensors, and aerodynamic coefficients derived from representative aircraft and missile characteristics.
+Entity presets define Su-57 specifications (26.7t mass, 78.8m² reference area, 284kN max thrust) and PAC-3 specifications (312kg mass, 120kN thrust, 5.2m length).
 
-### Entry Point
+**Main Entry Point** ([main.py](src/main/main.py))  
+- Prompts user for training mode (y/n)
+- Sets epoch count to 10,000 for training or 1 for demonstration
+- Initializes visualization in non-training mode
+- Handles keyboard interrupt and cleanup
 
-**Main Controller** ([main.py](src/main/main.py))  
-Orchestrates simulation execution:
-- Environment configuration and warning suppression for TensorFlow integration
-- Visualization setup in real-time mode
-- Training vs. demonstration mode selection
-- Keyboard interrupt handling and cleanup procedures
+## Physical Model
 
-The main loop prompts for training mode selection, configuring either single-epoch demonstration runs or multi-epoch training sessions (default 10,000 epochs).
+All positions, velocities, and forces are in world-space coordinates. Orientation is a 3x3 rotation matrix.
 
-## Physical Modeling
+**Force Calculation**  
+Forces are computed using standard aerodynamic formulas with dynamic pressure, reference areas, and coefficients. Control surfaces multiply dynamic pressure by area fraction, lift coefficient, and control input. Thrust applies at -50% of entity length. Drag and lift apply at -20% of entity length. Control surfaces apply at -45% of entity length, except ailerons at -5% length and ±50% wingspan.
 
-The simulation implements a comprehensive force model for each entity:
+**Torque and Rotation**  
+Each force transforms to body-frame, computes torque via cross product with application point, then divides by moment of inertia to get angular acceleration. Angular velocity integrates from angular acceleration. Orientation updates using Rodrigues formula: constructs skew-symmetric matrix from rotation axis, applies matrix exponential approximation, then re-orthonormalizes via SVD.
 
-**Primary Forces**:
-- **Gravity**: Constant 9.81 m/s² downward acceleration
-- **Thrust**: Directional force along the forward axis, magnitude scaled by throttle
-- **Drag**: Opposes velocity, magnitude determined by dynamic pressure, reference area, and drag coefficient curve
-- **Lift**: Perpendicular to velocity in the roll-up plane, generated by angle of attack
-- **Sideforce**: Lateral stabilization force from vertical stabilizer based on sideslip angle
-
-**Control Surface Forces**:
-- **Elevator**: Generates pitch moment through horizontal tail surfaces
-- **Aileron**: Produces roll moment through differential wing surface deflection
-- **Rudder**: Creates yaw moment via vertical tail surface
-
-Each force includes proper torque calculations based on application points relative to the center of mass, enabling realistic rotational dynamics. The simulation accounts for control effectiveness degradation as angle of attack exceeds optimal values, simulating post-stall behavior.
+**Limitations**  
+Missiles bypass proper aerodynamics by aligning roll to velocity each tick, noted as "overcheated" in code comments. Thrust technically produces no torque despite off-center application point. Control surface areas are approximations (vertical stabilizer = 10% reference area, control surfaces = 80% reference area for jets).
 
 ## Installation and Usage
-
-**Requirements**:
-- Python 3.10 or higher
-- NumPy for numerical computations
-- VPython for 3D visualization
-- TensorFlow and Keras for machine learning integration
-- Matplotlib for coefficient curve visualization
 
 Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-**Running the Simulation**:
+Run simulation:
 ```bash
 python src/main/main.py
 ```
 
-Upon execution, the program prompts for training mode. Selecting 'n' runs a single demonstration epoch with full visualization, while 'y' initiates accelerated training mode without rendering overhead.
+Respond 'n' for single visualization epoch or 'y' for 10,000 training epochs without visualization.
 
-**Testing**:
-The project includes physics unit tests verifiable through pytest:
+Run tests:
 ```bash
 pytest src/test/physics_tests.py
 ```
@@ -125,42 +103,28 @@ pytest src/test/physics_tests.py
 ```
 missile-jet-engagement-sim/
 ├── src/main/
-│   ├── main.py           # Entry point and execution controller
-│   ├── simulation.py     # Simulation loop and epoch management
-│   ├── entities.py       # Jet and missile entity implementations
-│   ├── physics.py        # Aerodynamic calculations and integration
-│   ├── guidance.py       # Missile guidance algorithms
-│   ├── viz.py            # VPython visualization (3D rendering)
-│   └── deeplearning.py   # Neural network training interface
-├── res/
-│   ├── presets/
-│   │   ├── ent_presets.py  # Entity physical specifications
-│   │   └── sim_presets.py  # Scenario generation functions
-│   └── viz_models/         # 3D model data for entities
+│   ├── main.py           # Entry point with mode selection
+│   ├── simulation.py     # 60Hz tick loop and epoch management
+│   ├── entities.py       # Jet and missile classes
+│   ├── physics.py        # Force calculations and integration
+│   ├── guidance.py       # Missile orientation logic
+│   ├── viz.py            # VPython 3D rendering
+│   └── deeplearning.py   # Neural network interface
+├── res/presets/
+│   ├── ent_presets.py    # Su-57 and PAC-3 specifications
+│   └── sim_presets.py    # Phase-based scenario generation
 ├── src/test/
-│   └── physics_tests.py  # Physics module unit tests
-└── requirements.txt      # Python dependencies
+│   └── physics_tests.py  # Unit tests
+└── requirements.txt
 ```
 
-## Technical Notes
+## Dependencies
 
-- The simulation uses world-space coordinates for all positions and velocities
-- Orientation is represented as 3x3 rotation matrices (SO(3) group)
-- Angular velocity is tracked in body-frame coordinates as degrees per second
-- The physics engine employs explicit Euler integration at 60Hz timestep
-- Missiles currently use simplified roll alignment to velocity for stability (noted as "overcheated" in code)
-- Control surface effectiveness includes stall behavior beyond optimal angle of attack
-- Air density calculation uses a simplified barometric formula valid up to stratospheric altitudes
-
-## Extension Points
-
-The modular architecture facilitates several extension opportunities:
-- Implement advanced guidance laws (proportional navigation, augmented proportional navigation, optimal guidance)
-- Add sensor modeling with field-of-view constraints and noise characteristics
-- Introduce countermeasure systems (chaff, flares, electronic warfare)
-- Develop more sophisticated missile flight dynamics with proper roll control
-- Create multiplayer scenarios with coordinated missile salvos
-- Integrate reinforcement learning agents for autonomous evasion maneuvers
+- NumPy: Vector and matrix operations
+- VPython: 3D visualization
+- TensorFlow/Keras: Neural network training
+- Matplotlib: Coefficient curve plotting
+- Pytest: Testing framework
 
 ---
 [ALL RIGHTS RESERVED]
