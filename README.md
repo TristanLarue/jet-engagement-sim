@@ -7,6 +7,10 @@ The visualization displays two screens: the left shows the 3D spatial positions 
 
 
 
+https://github.com/user-attachments/assets/8e3cffb4-c2ca-40c0-b7d2-d568aee9688d
+
+
+
 
 ## Core Components
 
