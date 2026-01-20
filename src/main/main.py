@@ -2,7 +2,7 @@ import sys
 import os
 import warnings
 import logging
-import deeplearning as dl
+import reinforcementlearning as dl
 
 
 # Set environment variables BEFORE any other imports
@@ -18,7 +18,6 @@ from viz import setup_viz, clean_viz
 from simulation import run
 
 def main(epochs: int = 1, sprint: bool = False) -> int:
-    
     if not sprint:
         setup_viz()
     try:
