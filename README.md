@@ -6,7 +6,6 @@ This project is a 3D physics simulation of aerial combat between a fighter jet a
 The visualization displays two screens: the left shows the 3D spatial positions and trajectories of entities, while the right shows a force visualization diagram with the jet's orientation vectors and real-time physical data.
 
 
-https://github.com/user-attachments/assets/a8531ad1-7871-4ecb-9dbd-8d6ec5cdf8e4
 
 
 ## Core Components
@@ -52,18 +51,16 @@ Contains `missile_direct_attack_DEBUG()` which constructs a rotation matrix that
 
 **Scenario Generation** ([sim_presets.py](res/presets/sim_presets.py), [ent_presets.py](res/presets/ent_presets.py))  
 Five difficulty phases with randomized initial conditions:
-- **Phase 1**: Single jet, moderate speed (260-360 m/s), minimal rotation
-- **Phase 2**: Single jet, wider speed range (220-480 m/s), initial angular velocity up to 20 deg/s
-- **Phase 3**: Jet with one missile spawned 12-20 km behind
-- **Phase 4**: Jet with two missiles
-- **Phase 5**: Jet with three missiles
+- **Phase 1**: Single jet, rewarded on survivability & stability
+- **Phase 2**: Single jet, single missile, rewarded on survivability and distance from the missile's velocity vector
+- **Phase 3**: Single jet with 3 missiles, good luck.
 
 Entity presets define Su-57 specifications (26.7t mass, 78.8m² reference area, 284kN max thrust) and PAC-3 specifications (312kg mass, 120kN thrust, 5.2m length).
 
 **Main Entry Point** ([main.py](src/main/main.py))  
 - Prompts user for training mode (y/n)
-- Sets epoch count to 10,000 for training or 1 for demonstration
-- Initializes visualization in non-training mode
+-   y: Soft-Actor-Critic model will train silently with no vizualisation
+-   n: Vizualisation will be initialized and will play a single epoch
 - Handles keyboard interrupt and cleanup
 
 ## Physical Model
