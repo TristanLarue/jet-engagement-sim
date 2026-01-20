@@ -30,7 +30,7 @@ def create_Sukoi57(starting_position: np.ndarray=np.zeros(3), starting_velocity:
 
 def create_PAC3(starting_position=np.zeros(3), starting_velocity=np.zeros(3), chase_strategy=None, target_entity=None):
     from src.main.entities import missile
-    from src.main.guidance import missile_direct_attack_DEBUG
+    from src.main.guidance import missile_predictive_attack
     return missile(
         starting_position=np.array(starting_position, dtype=float),
         starting_velocity=np.array(starting_velocity, dtype=float),
@@ -48,7 +48,7 @@ def create_PAC3(starting_position=np.zeros(3), starting_velocity=np.zeros(3), ch
         optimal_lift_aoa=10.0,
         length=5.2,
         target_entity=target_entity,
-        chase_strategy=missile_direct_attack_DEBUG,
+        chase_strategy=missile_predictive_attack,
         viz_shape={
             "compound_shape":"Pac3",
             "make_trail":True,

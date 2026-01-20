@@ -1,7 +1,7 @@
 import numpy as np
 from simulation import SIMULATION_TICKRATE
 import physics
-import deeplearning as dl
+import reinforcementlearning as dl
 ENTITYID_COUNTER = 0
 
 # A bit of object oriented programming to manage entities in a smart way
@@ -94,9 +94,34 @@ class missile(entity):
         self.chase_strategy = chase_strategy
         self.length = length
         self.control_inputs = {'pitch': 0.0, 'yaw': 0.0}
-        self.explosion_radius = 30.0  # meters
+        self.explosion_radius = 10.0  # meters
+        self.lifetime = 0.0  # seconds
 
     def think(self,entities):
+        # Increment lifetime
+        self.lifetime += 1.0 / SIMULATION_TICKRATE
+        
+        # Check for explosion (collision with target)
+        if physics.get_distance(self.position, self.target_entity.position) < self.explosion_radius:
+            self.alive = False
+            self.target_entity.alive = False
+            return
+        
+        # Miss detection: check if missile has missed and is going away from jet
+        # Only check after 2 seconds of being alive
+        if self.lifetime >= 2.0:
+            # Calculate direction vector from missile to jet
+            direction_to_jet = self.target_entity.position - self.position
+            
+            # Calculate dot product of velocity vector with direction to jet
+            # If negative, missile is moving away from jet
+            velocity_dot_direction = np.dot(self.velocity, direction_to_jet)
+            
+            # If moving away from jet, consider it a miss
+            if velocity_dot_direction < 0.0:
+                self.alive = False
+                return
+        
         self.chase_strategy(self)
 
     def tick(self):
@@ -135,6 +160,3 @@ class missile(entity):
         self.position = physics.integrate_position(self.position, self.velocity, 1.0 / SIMULATION_TICKRATE)
         if self.position[1] < 0.0:
             self.alive = False
-        if physics.get_distance(self.position,self.target_entity.position) < self.explosion_radius:
-            self.alive = False
-            self.target_entity.alive = False

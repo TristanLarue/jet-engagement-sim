@@ -33,6 +33,9 @@ _entity_visuals: Dict[int, Entity_visual] = {}
 _static_objects: list[Any] = []
 _force_objects: list[Any] = []
 _last_jet_instance: Any = None  # Global to track last jet instance created
+_missile_lines: Dict[int, Any] = {}  # Store lines connecting jet to missiles
+_exploded_missiles: set[int] = set()  # Track which missiles have exploded
+_explosion_spheres: Dict[int, Any] = {}  # Store permanent orange spheres for explosions
 
 FOCUS_ENTITY_ID: int = 0  # Global variable for camera focus entity ID
 
@@ -43,6 +46,7 @@ _jet_static: Any | None = None
 _jet_dynamic: Any | None = None
 _reward_display: Any | None = None
 _forces_jet_display: Any | None = None  # Jet object in forces canvas
+_jet_intercepted_label: Any | None = None  # Label for "JET INTERCEPTED" message
 
 # Force arrows for visualization
 _force_arrows: Dict[str, Any] = {}  # Store force arrows by name
@@ -136,6 +140,14 @@ def _extract_R(entity: Any) -> Optional[np.ndarray]:
     if R is None:
         return None
     return np.array(R, dtype=float).reshape(3, 3)
+
+
+def _extract_vel(entity: Any) -> Optional[np.ndarray]:
+    v = getattr(entity, "velocity", None)
+    if v is None:
+        return None
+    a = np.array(v, dtype=float).reshape(3)
+    return a
 
 
 def _fmt_sim_info() -> str:
@@ -336,6 +348,8 @@ def _place_hud() -> None:
             _main_status.pos = vp.vector(w / 2, h - 22, 0)
         if _main_info is not None:
             _main_info.pos = vp.vector(12, h - 24, 0)
+        if _jet_intercepted_label is not None:
+            _jet_intercepted_label.pos = vp.vector(w / 2, h / 2, 0)
 
     if _forces_canvas is not None:
         w = int(getattr(_forces_canvas, "width", 640))
@@ -501,7 +515,7 @@ def _iter_objects(obj: Any) -> Sequence[Any]:
 
 
 def cleanup_viz() -> None:
-    global _tick, _main_status, _forces_status, _main_info, _jet_static, _jet_dynamic, _reward_display, _last_jet_instance, _forces_jet_display, _force_arrows
+    global _tick, _main_status, _forces_status, _main_info, _jet_static, _jet_dynamic, _reward_display, _last_jet_instance, _forces_jet_display, _force_arrows, _missile_lines, _exploded_missiles, _explosion_spheres, _jet_intercepted_label
 
     for ev in list(_entity_visuals.values()):
         for obj in _iter_objects(ev.body):
@@ -521,6 +535,23 @@ def cleanup_viz() -> None:
                 pass
     _entity_visuals.clear()
 
+    # Clean up missile lines
+    for line in list(_missile_lines.values()):
+        try:
+            line.visible = False
+        except Exception:
+            pass
+    _missile_lines.clear()
+
+    # Clean up explosion spheres
+    for sphere in list(_explosion_spheres.values()):
+        try:
+            sphere.visible = False
+        except Exception:
+            pass
+    _explosion_spheres.clear()
+    _exploded_missiles.clear()
+
     for obj in list(_static_objects) + list(_force_objects):
         try:
             obj.visible = False
@@ -529,7 +560,7 @@ def cleanup_viz() -> None:
     _static_objects.clear()
     _force_objects.clear()
 
-    for lbl in [_main_status, _forces_status, _main_info, _jet_static, _jet_dynamic, _reward_display]:
+    for lbl in [_main_status, _forces_status, _main_info, _jet_static, _jet_dynamic, _reward_display, _jet_intercepted_label]:
         if lbl is None:
             continue
         try:
@@ -546,6 +577,7 @@ def cleanup_viz() -> None:
     _last_jet_instance = None
     _forces_jet_display = None
     _force_arrows = {}
+    _jet_intercepted_label = None
 
     _tick = 0
 
@@ -666,10 +698,12 @@ def _create_entity_visual(entity: Any) -> Entity_visual:
 
 
     # 500x visualization scale for imported mesh models
+    # Reduce Jet scale by 50%
+    scale_factor = MODELS_SCALE * 0.5 if kind == "jet" else MODELS_SCALE
     if body is not None:
-        _scale_loaded_model(body, MODELS_SCALE)
+        _scale_loaded_model(body, scale_factor)
     if body is None:
-        body = vp.sphere(canvas=_main_canvas, pos=vp.vector(0, 0, 0), radius=MODELS_SCALE, color=color, opacity=opacity)
+        body = vp.sphere(canvas=_main_canvas, pos=vp.vector(0, 0, 0), radius=scale_factor, color=color, opacity=opacity)
 
     # Trails: attach_trail works for mesh compounds
 
@@ -682,15 +716,17 @@ def _create_entity_visual(entity: Any) -> Entity_visual:
             pass
         body_forces = _load_model_from_folder(compound_shape, canvas=_forces_canvas, color=color, opacity=opacity)
         if body_forces is not None:
-            _scale_loaded_model(body_forces, MODELS_SCALE)
+            _scale_loaded_model(body_forces, scale_factor)  # Use same 50% scale for jet
         if body_forces is None:
-            body_forces = vp.sphere(canvas=_forces_canvas, pos=vp.vector(0, 0, 0), radius=MODELS_SCALE, color=color, opacity=opacity)
+            body_forces = vp.sphere(canvas=_forces_canvas, pos=vp.vector(0, 0, 0), radius=scale_factor, color=color, opacity=opacity)
 
     # No heading arrow created
 
     ev = Entity_visual(body=body, kind=kind, length=length, heading=None, body_forces=body_forces)
     if make_trail:
-        _apply_trail(ev, trail_radius, trail_retain, trail_color)
+        # Set all trails to permanent retention (use very large number)
+        permanent_retain = 999999
+        _apply_trail(ev, trail_radius, permanent_retain, trail_color)
     
     # Track last jet instance for camera centering
     if kind == "jet":
@@ -861,7 +897,7 @@ def _update_entity_visual(ev: Entity_visual, entity: Any) -> None:
 
 
 def update_instances(entities: Sequence[Any]) -> None:
-    global _tick
+    global _tick, _jet_intercepted_label
 
     if not _canvases_created:
         try:
@@ -888,6 +924,17 @@ def update_instances(entities: Sequence[Any]) -> None:
 
     seen: set[int] = set()
     focus_entity: Any = None  # Track the entity with FOCUS_ENTITY_ID for forces display
+    jet_entity: Any = None
+    jet_vid: int = -1
+    jet_alive: bool = True
+
+    # Find jet entity first (regardless of alive status)
+    for e in entities:
+        if e.__class__.__name__.lower() == "jet":
+            jet_entity = e
+            jet_vid = _get_viz_id(e)
+            jet_alive = bool(getattr(e, "alive", True))
+            break
 
     for e in entities:
         vid = _get_viz_id(e)
@@ -901,13 +948,238 @@ def update_instances(entities: Sequence[Any]) -> None:
         if ev is None:
             ev = _create_entity_visual(e)
             _entity_visuals[vid] = ev
-        _update_entity_visual(ev, e)
+        
+        # Check if this is a missile entity
+        is_missile = (ev.kind == "missile" or 
+                     e.__class__.__name__.lower() == "missile" or
+                     "missile" in e.__class__.__name__.lower())
+        
+        if is_missile:
+            # Get alive status - be very explicit about checking
+            # Default to True if attribute doesn't exist (assume alive)
+            is_alive = bool(getattr(e, "alive", True))
+            
+            # Ensure we're working on the main canvas (left canvas) for missiles
+            # Missiles only exist on main canvas, not forces canvas
+            if _main_canvas is not None:
+                _main_canvas.select()
+            
+            # Keep exploded missiles invisible
+            if vid in _exploded_missiles:
+                # Already exploded - ensure it stays invisible on main canvas
+                def _keep_invisible(obj):
+                    """Recursively keep opacity at 0 and visibility False."""
+                    if obj is None:
+                        return
+                    try:
+                        if hasattr(obj, "opacity"):
+                            obj.opacity = 0.0
+                        if hasattr(obj, "visible"):
+                            obj.visible = False
+                    except Exception:
+                        pass
+                    if isinstance(obj, (list, tuple)):
+                        for sub_obj in obj:
+                            _keep_invisible(sub_obj)
+                
+                # Only modify body on main canvas (missiles don't have body_forces)
+                if ev.body is not None:
+                    for obj in _iter_objects(ev.body):
+                        _keep_invisible(obj)
+            elif not is_alive:
+                # Missile just exploded - set opacity to 0 and create explosion sphere
+                if vid not in _exploded_missiles:
+                    _exploded_missiles.add(vid)
+                    missile_pos = _extract_pos(e)
+                    
+                    # Set missile opacity to 0 and visibility to False to make it disappear
+                    # Handle both single objects and compound models (lists/tuples)
+                    # Only modify objects on main canvas
+                    def _set_invisible(obj):
+                        """Recursively set opacity and visibility on object and nested objects."""
+                        if obj is None:
+                            return
+                        try:
+                            if hasattr(obj, "opacity"):
+                                obj.opacity = 0.0
+                            if hasattr(obj, "visible"):
+                                obj.visible = False
+                        except Exception:
+                            pass
+                        # If it's a compound (list/tuple), recurse
+                        if isinstance(obj, (list, tuple)):
+                            for sub_obj in obj:
+                                _set_invisible(sub_obj)
+                    
+                    # Only modify body on main canvas (missiles don't have body_forces)
+                    if ev.body is not None:
+                        for obj in _iter_objects(ev.body):
+                            _set_invisible(obj)
+                    
+                    # Remove missile line if it exists (lines are on main canvas)
+                    if vid in _missile_lines:
+                        try:
+                            _missile_lines[vid].visible = False
+                            del _missile_lines[vid]
+                        except Exception:
+                            pass
+                    
+                    # Create permanent orange sphere at explosion location on main canvas
+                    # Adjust position by subtracting velocity to get position from previous tick
+                    if missile_pos is not None and _main_canvas is not None:
+                        try:
+                            # Get missile velocity and tick rate
+                            missile_vel = _extract_vel(e)
+                            tick_rate = _sim_config.get("tick_rate", None)
+                            
+                            # Fallback: try to get tick rate from simulation module
+                            if tick_rate is None or tick_rate == "N/A":
+                                try:
+                                    import simulation as sim
+                                    tick_rate = getattr(sim, "SIMULATION_TICKRATE", None)
+                                except Exception:
+                                    pass
+                            
+                            # Calculate adjusted position: subtract one tick's worth of movement
+                            explosion_pos = np.array(missile_pos, dtype=float)
+                            if missile_vel is not None and tick_rate is not None:
+                                try:
+                                    tick_rate_float = float(tick_rate)
+                                    if tick_rate_float > 0:
+                                        dt = 1.0 / tick_rate_float
+                                        # Subtract velocity * dt to get position from previous tick
+                                        explosion_pos = explosion_pos - (missile_vel * dt)
+                                except (ValueError, TypeError, ZeroDivisionError):
+                                    # If calculation fails, use current position
+                                    pass
+                            
+                            # Ensure we're on the main canvas (left canvas)
+                            _main_canvas.select()
+                            
+                            # Create the explosion sphere on main canvas at adjusted position
+                            explosion_sphere = vp.sphere(
+                                canvas=_main_canvas,
+                                pos=_vpvec(explosion_pos),
+                                radius=30.0,  # Size of about 30 as requested
+                                color=vp.color.orange,
+                                opacity=1.0
+                            )
+                            # Explicitly set visibility
+                            explosion_sphere.visible = True
+                            
+                            # Store references
+                            _explosion_spheres[vid] = explosion_sphere
+                            _static_objects.append(explosion_sphere)
+                        except Exception:
+                            # If sphere creation fails, continue anyway
+                            pass
+            elif is_alive:
+                # Missile is still alive - update visuals based on distance to jet
+                # Ensure we're on main canvas (missiles only exist on main canvas)
+                if _main_canvas is not None:
+                    _main_canvas.select()
+                
+                # Make sure it's visible on main canvas
+                if ev.body is not None:
+                    for obj in _iter_objects(ev.body):
+                        try:
+                            if hasattr(obj, "opacity"):
+                                obj.opacity = 1.0
+                            if hasattr(obj, "visible"):
+                                obj.visible = True
+                        except Exception:
+                            pass
+                
+                if jet_entity is not None:
+                    missile_pos = _extract_pos(e)
+                    jet_pos = _extract_pos(jet_entity)
+                    if missile_pos is not None and jet_pos is not None:
+                        import physics
+                        distance = float(np.linalg.norm(missile_pos - jet_pos))
+                        kill_range = 30.0  # explosion_radius from missile entity
+                        in_kill_range = distance < kill_range
+                        
+                        for obj in _iter_objects(ev.body):
+                            try:
+                                if hasattr(obj, "radius"):
+                                    if in_kill_range:
+                                        obj.radius = MODELS_SCALE * 1.5  # Large orange sphere
+                                    else:
+                                        obj.radius = MODELS_SCALE * 0.3  # Small white sphere
+                                if hasattr(obj, "color"):
+                                    if in_kill_range:
+                                        obj.color = vp.color.orange
+                                    else:
+                                        obj.color = vp.color.white
+                            except Exception:
+                                pass
+        
+        # Skip visual updates for exploded missiles to prevent them from becoming visible again
+        if ev.kind != "missile" or vid not in _exploded_missiles:
+            _update_entity_visual(ev, e)
         
         # Center camera on entity with FOCUS_ENTITY_ID
         if vid == FOCUS_ENTITY_ID:
             p = _extract_pos(e)
             if p is not None:
                 _main_canvas.center = vp.vector(float(p[0]), float(p[1]), float(p[2]))
+
+    # Update lines connecting jet to all active missiles - update positions every tick
+    # Use cylinder objects instead of curves for reliable position updates in VPython
+    if jet_entity is not None and jet_vid >= 0:
+        active_missile_vids = set()
+        
+        # Iterate through entities and update/create lines immediately with fresh positions each tick
+        for e in entities:
+            if e.__class__.__name__.lower() == "missile" and bool(getattr(e, "alive", True)):
+                missile_vid = _get_viz_id(e)
+                active_missile_vids.add(missile_vid)
+                
+                # Get fresh positions right before updating line (ensures positions are current each tick)
+                fresh_jet_pos = _extract_pos(jet_entity)
+                fresh_missile_pos = _extract_pos(e)
+                
+                if fresh_jet_pos is not None and fresh_missile_pos is not None:
+                    # Calculate direction vector from jet to missile
+                    direction = fresh_missile_pos - fresh_jet_pos
+                    distance = float(np.linalg.norm(direction))
+                    
+                    if distance > 1e-6:
+                        if missile_vid not in _missile_lines:
+                            # Create new cylinder line with current positions
+                            # VPython cylinders: pos is start point, axis is the vector to end point
+                            try:
+                                line = vp.cylinder(
+                                    canvas=_main_canvas,
+                                    pos=_vpvec(fresh_jet_pos),
+                                    axis=_vpvec(direction),
+                                    radius=5.0,
+                                    color=vp.color.white,
+                                    opacity=0.4
+                                )
+                                _missile_lines[missile_vid] = line
+                            except Exception:
+                                pass
+                        else:
+                            # Update existing cylinder line with fresh positions from current tick
+                            # VPython cylinders: pos is start point, axis is the vector to end point
+                            try:
+                                line = _missile_lines[missile_vid]
+                                line.pos = _vpvec(fresh_jet_pos)
+                                line.axis = _vpvec(direction)
+                                line.opacity = 0.4
+                                line.visible = True
+                            except Exception:
+                                pass
+        
+        # Remove lines for missiles that no longer exist or are not alive
+        for mid in list(_missile_lines.keys()):
+            if mid not in active_missile_vids:
+                try:
+                    _missile_lines[mid].visible = False
+                    del _missile_lines[mid]
+                except Exception:
+                    pass
 
     for vid in list(_entity_visuals.keys()):
         if vid in seen:
@@ -928,6 +1200,13 @@ def update_instances(entities: Sequence[Any]) -> None:
         if ev.heading is not None:
             try:
                 ev.heading.visible = False
+            except Exception:
+                pass
+        # Remove missile line if entity is removed
+        if vid in _missile_lines:
+            try:
+                _missile_lines[vid].visible = False
+                del _missile_lines[vid]
             except Exception:
                 pass
 
@@ -971,6 +1250,36 @@ def update_instances(entities: Sequence[Any]) -> None:
                 current_reward = float(getattr(ent, 'current_reward', 0.0))
                 break
         _reward_display.text = f"AI Current Reward:\n{current_reward:.3f}"
+
+    # Show/hide "JET INTERCEPTED" message on main canvas
+    if jet_entity is not None and not jet_alive:
+        # Jet is intercepted - show red box in center of main canvas
+        if _jet_intercepted_label is None:
+            # Create the label if it doesn't exist
+            w = int(getattr(_main_canvas, "width", 1280))
+            h = int(getattr(_main_canvas, "height", 900))
+            _jet_intercepted_label = vp.label(
+                canvas=_main_canvas,
+                pos=vp.vector(w / 2, h / 2, 0),
+                text="JET INTERCEPTED",
+                height=36,
+                border=12,
+                box=True,
+                line=False,
+                opacity=0.9,
+                background=vp.color.red,
+                font="monospace",
+                color=vp.color.white,
+                align="center",
+            )
+            _jet_intercepted_label.pixel_pos = True
+        else:
+            # Label exists, make sure it's visible
+            _jet_intercepted_label.visible = True
+    else:
+        # Jet is alive or doesn't exist - hide the label
+        if _jet_intercepted_label is not None:
+            _jet_intercepted_label.visible = False
 
     _place_hud()
 

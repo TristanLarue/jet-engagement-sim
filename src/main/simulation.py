@@ -5,7 +5,7 @@ import warnings
 # Suppress warnings before any heavy imports
 warnings.filterwarnings("ignore")
 
-import deeplearning as dl
+import reinforcementlearning as dl
 import time
 from typing import Any, List
 
@@ -18,17 +18,18 @@ sys.path.insert(0, project_root)
 import viz
 from res.presets import sim_presets
 
-SIMULATION_DURATION: float = 40.0
+SIMULATION_DURATION: float = 60.0
 SIMULATION_TICKRATE: float = 60.0
 SIMULATION_SPEED: float = 1.0
-SIMULATION_BOX_SIZE = np.array([40000.0, 10000.0, 40000.0], dtype=float)
-SIMULATION_RESOLUTION = np.array([1500, 500], dtype=int)
+SIMULATION_BOX_SIZE = np.array([20000.0, 10000.0, 20000.0], dtype=float) # JET IS TRAINED ON 20k/20k, DO NOT CHANGE UNLESS TRAINING A NEW MODEL
+SIMULATION_RESOLUTION = np.array([1500, 500], dtype=int) # might break visuals if changed, at your own risk ;)
 
 
 def run(epochs: int = 1, sprint: bool = False) -> None:
     epoch = 0
     while epochs <= 0 or epoch < epochs:
         phase = int(getattr(dl, "REWARD_PHASE", getattr(dl, "PHASE", 1)))
+        phase = max(1, min(3, phase))  # Clamp to 1-3
         entities = sim_presets.create_scenario(phase)
         run_epoch(entities, SIMULATION_DURATION, SIMULATION_TICKRATE, SIMULATION_SPEED, sprint)
         epoch += 1
@@ -55,6 +56,21 @@ def run_epoch(
                 continue
             ent.think(entities)
             ent.tick()
+
+        # Maintain missile count based on phase: 0 (phase 1), 1 (phase 2), 3 (phase 3)
+        if jet_obj is not None and bool(getattr(jet_obj, "alive", True)):
+            phase = int(getattr(dl, "REWARD_PHASE", getattr(dl, "PHASE", 1)))
+            phase = max(1, min(3, phase))  # Clamp to 1-3
+            
+            phase_target = 0 if phase == 1 else (1 if phase == 2 else 3)
+            active_count = sum(1 for e in entities if e.__class__.__name__.lower() == "missile" and bool(getattr(e, "alive", True)))
+            
+            # Spawn missing missiles
+            for _ in range(max(0, phase_target - active_count)):
+                try:
+                    entities.append(sim_presets.spawn_missile_dynamic(jet_obj))
+                except Exception:
+                    pass
 
         if not sprint:
             viz.update_instances(entities)

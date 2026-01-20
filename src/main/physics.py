@@ -141,9 +141,9 @@ def get_drag_force(velocity: np.ndarray, air_density: float, reference_area: flo
     return drag_magnitude * drag_direction
 
 def get_sideforce_force(velocity: np.ndarray, reference_area: float, side_cl: float, R: np.ndarray, air_density: float) -> np.ndarray:
-    # Rotate R by 90 degrees on roll axis so "up" points towards right wing
+    '''Returns the sideforce force vector'''
+    '''Rotates R by 90 degrees on roll axis so "up" points towards right wing'''
     side_R = np.column_stack((get_forward_dir(R), get_right_dir(R), -get_up_dir(R)))
-    # Reuse lift force calc with vertical stavilizers values
     return get_lift_force(velocity, reference_area, side_cl, side_R, air_density)
 
 def get_dynamic_pressure(velocity: np.ndarray, air_density: float):
@@ -155,6 +155,7 @@ def get_dynamic_pressure(velocity: np.ndarray, air_density: float):
 
 
 def get_control_effectiveness(velocity: np.ndarray, R: np.ndarray, optimal_lift_aoa: float, stall_fade_degrees: float = 25.0, minimum_effectiveness: float = 0.2) -> float:
+    '''Returns the control effectiveness based on aoa'''
     angle_of_attack = abs(float(get_angle_of_attack(velocity, R)))
     if angle_of_attack <= float(optimal_lift_aoa): return 1.0
     if float(stall_fade_degrees) < 1e-12: return float(minimum_effectiveness)
@@ -162,9 +163,12 @@ def get_control_effectiveness(velocity: np.ndarray, R: np.ndarray, optimal_lift_
 
 
 def get_control_force_magnitude(dynamic_pressure: float, reference_area: float, surface_area_multiplier: float, max_lift_coefficient: float, lift_coefficient_multiplier: float, control_input: float, control_effectiveness: float) -> float:
+    '''Returns the control force magnitude'''
     return float(dynamic_pressure) * float(reference_area) * float(surface_area_multiplier) * float(max_lift_coefficient) * float(lift_coefficient_multiplier) * float(control_input) * float(control_effectiveness)
 
 def get_elevator_force(velocity: np.ndarray, air_density: float, reference_area: float, max_lift_coefficient: float, R: np.ndarray, pitch_input: float, optimal_lift_aoa: float, elevator_surface_area_multiplier: float = 0.18, elevator_lift_coefficient_multiplier: float = 1.0) -> np.ndarray:
+    '''Returns the elevator force vector'''
+    '''Placeholder function for now'''
     if abs(float(pitch_input)) < 1e-12: 
         return np.zeros(3)
     velocity_magnitude = np.linalg.norm(velocity)
@@ -174,6 +178,8 @@ def get_elevator_force(velocity: np.ndarray, air_density: float, reference_area:
     return get_control_force_magnitude(dynamic_pressure, reference_area, elevator_surface_area_multiplier, max_lift_coefficient, elevator_lift_coefficient_multiplier, pitch_input, get_control_effectiveness(velocity, R, optimal_lift_aoa)) * get_lift_dir(velocity, R)
 
 def get_aileron_force(velocity: np.ndarray, air_density: float, reference_area: float, max_lift_coefficient: float, R: np.ndarray, roll_input: float, optimal_lift_aoa: float, aileron_surface_area_multiplier: float = 0.06, aileron_lift_coefficient_multiplier: float = 0.8)-> np.ndarray:
+    '''Returns the aileron force vector'''
+    '''Placeholder function for now'''
     if abs(float(roll_input)) < 1e-12: 
         return np.zeros(3)
     velocity_magnitude = np.linalg.norm(velocity)
@@ -184,6 +190,8 @@ def get_aileron_force(velocity: np.ndarray, air_density: float, reference_area: 
     return aileron_force_vector
 
 def get_rudder_force(velocity: np.ndarray, air_density: float, reference_area: float, max_lift_coefficient: float, R: np.ndarray, yaw_input: float, optimal_lift_aoa: float, rudder_surface_area_multiplier: float = 0.10, rudder_lift_coefficient_multiplier: float = 0.7) -> np.ndarray:
+    '''Returns the rudder force vector'''
+    '''Placeholder function for now'''
     if abs(float(yaw_input)) < 1e-12: 
         return np.zeros(3)
     velocity_magnitude = np.linalg.norm(velocity)
@@ -229,6 +237,7 @@ def get_lift_dir(velocity: np.ndarray, R: np.ndarray) -> np.ndarray:
     return lift / lift_norm
 
 def get_omega(force: np.ndarray, R: np.ndarray, application_point: np.ndarray, moment_of_inertia: np.ndarray) -> np.ndarray:
+    '''MAIN FUNCTION TO GET THE ANGULAR ACCELERATION OFF A FORCE'''
     F_body = R.T @ force
     torque_body = np.cross(application_point, F_body)
     alpha_body = torque_body / moment_of_inertia
@@ -329,6 +338,8 @@ def get_angles_from_R(R: np.ndarray) -> tuple[float, float, float]:
 
 
 if __name__=="__main__":
+    '''Test to plot out Cl & Cd depending on aoa'''
+    '''Mainly used to display the coefficients simplification'''
     import numpy as np
     import matplotlib.pyplot as plt
     aoa=np.arange(-180.0,180.0+1e-9,0.5)

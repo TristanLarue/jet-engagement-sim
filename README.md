@@ -110,7 +110,7 @@ missile-jet-engagement-sim/
 │   ├── physics.py        # Force calculations and integration
 │   ├── guidance.py       # Missile orientation logic
 │   ├── viz.py            # VPython 3D rendering
-│   └── deeplearning.py   # Neural network interface
+│   └── reinforcementlearning.py   # Neural network interface
 ├── res/presets/
 │   ├── ent_presets.py    # Su-57 and PAC-3 specifications
 │   └── sim_presets.py    # Phase-based scenario generation
